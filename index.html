@@ -3,9 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>📊 Portfolio Pro</title>
-<!-- 파비콘: 도넛 차트 이모티콘 -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='80' text-anchor='middle' x='50'>📊</text></svg>">
+<title>Portfolio Pro</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{--bg-deep:#06070f;--bg-base:#0c0d1a;--bg-card:rgba(255,255,255,0.028);--bg-input:#080916;--border:rgba(130,140,255,0.1);--border-focus:rgba(130,140,255,0.35);--accent:#7c83ff;--accent-glow:rgba(124,131,255,0.15);--text-primary:#e8eaf0;--text-secondary:#8b90a8;--text-muted:#555a73;--gain:#ff6b6b;--loss:#5b9cff;--dividend:#ffbe3d;--dividend-bg:rgba(255,190,61,0.1);--success:#4ade80;--danger:#f87171;--mono:'JetBrains Mono','SF Mono',monospace;--sans:'Noto Sans KR',-apple-system,sans-serif;--radius:14px;--radius-sm:8px}
@@ -93,6 +91,14 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .div-month-chip{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.75rem;font-family:var(--mono);transition:all 0.2s}
 .div-month-chip.selected{background:rgba(255,190,61,0.15);border-color:rgba(255,190,61,0.3);color:var(--dividend)}
 @media(max-width:400px){.total-value{font-size:1.6rem}.total-meta{gap:10px}}
+
+.holding-name{font-weight:700;font-size:0.95rem}.holding-ticker{font-family:var(--mono);font-size:0.68rem;color:var(--text-muted);margin-left:6px}
+.year-tabs{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:12px}
+.year-tab{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.75rem;font-family:var(--mono);transition:all 0.2s}
+.year-tab.active{background:var(--accent-glow);border-color:rgba(124,131,255,0.3);color:#a5b0ff}
+.ticker-option{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-bottom:4px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:all 0.15s}
+.ticker-option:hover,.ticker-option.selected{background:rgba(124,131,255,0.1);border-color:rgba(124,131,255,0.25)}
+.ticker-option .name{font-weight:600;font-size:0.88rem}.ticker-option .code{font-family:var(--mono);font-size:0.7rem;color:var(--text-muted)}
 </style>
 </head>
 <body>
@@ -102,7 +108,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 // ═══════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════
-const API_BASE = 'https://kgu3405.tplinkdns.com/api';
+const API_BASE = 'http://kgu3405.tplinkdns.com:8099/api';
 const AUTO_REFRESH_SEC = 300;
 
 // ═══════════════════════════════════════════
@@ -126,6 +132,8 @@ let divDetailOpen=false;  // 배당 상세 접기/펴기
 let selectedDivMonth=null; // 배당월 필터 (null=전체)
 let editAcc=null; // 계좌 수정용
 let customDivMonths=[]; // 모달에서 커스텀 배당월 선택
+let divLogYear_filter=new Date().getFullYear();
+let dashHoldingsOpen=false;
 
 function defState(){return{accounts:[],dividendLogs:[],settings:{exchangeRate:1450}}}
 function loadSt(){
@@ -362,8 +370,26 @@ function annualDiv(afterTax=true){return monthDiv(afterTax).reduce((s,m)=>s+m,0)
 // ═══════════════════════════════════════════
 // SVG
 // ═══════════════════════════════════════════
-function svgTreemap(items,w=700,h=360){if(!items.length)return'';const total=items.reduce((s,i)=>s+Math.abs(i.value),0);if(total===0)return'';const sorted=[...items].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));const rects=[];function strip(row,x,y,cw,ch,hz){const rt=row.reduce((s,i)=>s+Math.abs(i.value),0);let off=0;row.forEach(item=>{const ratio=Math.abs(item.value)/rt;if(hz){const rw=cw*ratio;rects.push({...item,x:x+off,y,w:rw,h:ch});off+=rw}else{const rh=ch*ratio;rects.push({...item,x,y:y+off,w:cw,h:rh});off+=rh}})}let rem=[...sorted],cx=0,cy=0,cw=w,ch=h;while(rem.length>0){const hz=cw>=ch;const remT=rem.reduce((s,i)=>s+Math.abs(i.value),0);let row=[rem[0]],rowT=Math.abs(rem[0].value);for(let i=1;i<rem.length&&row.length<5;i++){row.push(rem[i]);rowT+=Math.abs(rem[i].value)}const sr=rowT/remT;if(hz){const sw=cw*sr;strip(row,cx,cy,sw,ch,false);cx+=sw;cw-=sw}else{const sh=ch*sr;strip(row,cx,cy,cw,sh,true);cy+=sh;ch-=sh}rem=rem.slice(row.length)}let svg=`<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;rects.forEach(r=>{const cp=r.dailyChange!=null?r.dailyChange:(r.changePct||0);const op=Math.min(0.3+Math.abs(cp)*0.04,0.85);const fill=cp>0?`rgba(255,107,107,${op})`:cp<0?`rgba(91,156,255,${op})`:'rgba(100,116,139,0.35)';const fs=Math.max(7,Math.min(r.w/7.5,r.h/3.5,16));const show=r.w>45&&r.h>28;svg+=`<rect x="${r.x+1}" y="${r.y+1}" width="${Math.max(0,r.w-2)}" height="${Math.max(0,r.h-2)}" fill="${fill}" rx="4" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>`;if(show){svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2-fs*0.35}" text-anchor="middle" fill="white" font-size="${fs}" font-weight="700" font-family="'JetBrains Mono',monospace">${r.ticker}</text>`;svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*0.65}" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="${fs*0.72}" font-family="'JetBrains Mono',monospace">${pct(cp)}</text>`;if(r.w>85&&r.h>50)svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*1.5}" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="${fs*0.55}" font-family="'JetBrains Mono',monospace">${fmt(r.value)}</text>`}});return svg+'</svg>'}
+function svgTreemap(items,w=700,h=360){if(!items.length)return'';const total=items.reduce((s,i)=>s+Math.abs(i.value),0);if(total===0)return'';const sorted=[...items].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));const rects=[];function strip(row,x,y,cw,ch,hz){const rt=row.reduce((s,i)=>s+Math.abs(i.value),0);let off=0;row.forEach(item=>{const ratio=Math.abs(item.value)/rt;if(hz){const rw=cw*ratio;rects.push({...item,x:x+off,y,w:rw,h:ch});off+=rw}else{const rh=ch*ratio;rects.push({...item,x,y:y+off,w:cw,h:rh});off+=rh}})}let rem=[...sorted],cx=0,cy=0,cw=w,ch=h;while(rem.length>0){const hz=cw>=ch;const remT=rem.reduce((s,i)=>s+Math.abs(i.value),0);let row=[rem[0]],rowT=Math.abs(rem[0].value);for(let i=1;i<rem.length&&row.length<5;i++){row.push(rem[i]);rowT+=Math.abs(rem[i].value)}const sr=rowT/remT;if(hz){const sw=cw*sr;strip(row,cx,cy,sw,ch,false);cx+=sw;cw-=sw}else{const sh=ch*sr;strip(row,cx,cy,cw,sh,true);cy+=sh;ch-=sh}rem=rem.slice(row.length)}let svg=`<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;rects.forEach(r=>{const cp=r.dailyChange!=null?r.dailyChange:(r.changePct||0);const op=Math.min(0.3+Math.abs(cp)*0.04,0.85);const fill=cp>0?`rgba(255,107,107,${op})`:cp<0?`rgba(91,156,255,${op})`:'rgba(100,116,139,0.35)';const fs=Math.max(7,Math.min(r.w/7.5,r.h/3.5,16));const show=r.w>45&&r.h>28;svg+=`<rect x="${r.x+1}" y="${r.y+1}" width="${Math.max(0,r.w-2)}" height="${Math.max(0,r.h-2)}" fill="${fill}" rx="4" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>`;if(show){svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2-fs*0.35}" text-anchor="middle" fill="white" font-size="${fs}" font-weight="700" font-family="'Noto Sans KR',sans-serif">${(r.name||r.ticker).length>8?(r.name||r.ticker).slice(0,7)+'…':(r.name||r.ticker)}</text>`;svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*0.65}" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="${fs*0.72}" font-family="'JetBrains Mono',monospace">${pct(cp)}</text>`;if(r.w>85&&r.h>50)svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*1.5}" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="${fs*0.55}" font-family="'JetBrains Mono',monospace">${fmt(r.value)}</text>`}});return svg+'</svg>'}
 function svgDonut(data,sz=130){const total=data.reduce((s,d)=>s+d.value,0);if(total===0)return'';let cum=0;const cx=sz/2,cy=sz/2,r=sz*0.38,sw=sz*0.14;let svg=`<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">`;data.forEach(d=>{const start=cum/total;cum+=d.value;const end=cum/total;const sa=start*Math.PI*2-Math.PI/2,ea=end*Math.PI*2-Math.PI/2;const la=end-start>0.5?1:0;svg+=`<path d="M ${cx+r*Math.cos(sa)} ${cy+r*Math.sin(sa)} A ${r} ${r} 0 ${la} 1 ${cx+r*Math.cos(ea)} ${cy+r*Math.sin(ea)}" fill="none" stroke="${d.color}" stroke-width="${sw}"/>`});return svg+'</svg>'}
+
+
+// 이중 바 차트 (예상 vs 실제)
+function dualBarChart(expected,actual,h=170,clickable=false,activeIdx=null){
+  const max=Math.max(...expected.map(d=>d.value),...actual.map(d=>d.value),1);
+  let html='<div class="bar-chart" style="height:'+h+'px">';
+  expected.forEach((d,i)=>{
+    const ev=d.value,av=actual[i]?actual[i].value:0;
+    const eh=Math.max((ev/max)*(h-42),ev>0?2:0),ah=Math.max((av/max)*(h-42),av>0?2:0);
+    const act=activeIdx===i?'active':'';
+    const click=clickable?`onclick="onBarClick(${i})"`:''
+    html+=`<div class="bar-col ${act}" ${click}><span class="bar-val">${fmtS(Math.max(ev,av))}</span><div style="display:flex;gap:1px;align-items:flex-end;width:100%;justify-content:center"><div style="width:45%;max-width:16px;height:${eh}px;background:${d.color||'rgba(255,190,61,0.5)'};border-radius:3px 3px 0 0;transition:height 0.5s"></div><div style="width:45%;max-width:16px;height:${ah}px;background:rgba(74,222,128,${av>0?0.6:0});border-radius:3px 3px 0 0;transition:height 0.5s"></div></div><span class="bar-label">${d.label}</span></div>`;
+  });
+  html+='</div><div style="display:flex;gap:12px;justify-content:center;margin-top:6px;font-size:0.68rem"><span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:rgba(255,190,61,0.6)"></span><span style="color:var(--text-muted)">예상</span></span><span style="display:flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:rgba(74,222,128,0.6)"></span><span style="color:var(--text-muted)">실제</span></span></div>';
+  return html;
+}
+function monthDivActual(year){const m=Array(12).fill(0);state.dividendLogs.forEach(l=>{const d=new Date(l.date);if(year&&d.getFullYear()!==year)return;m[d.getMonth()]+=toK(l.amount,l.currency)});return m}
+function divLogYears(){const s=new Set();state.dividendLogs.forEach(l=>s.add(new Date(l.date).getFullYear()));return[...s].sort()}
 
 // 9. 클릭 가능한 바 차트
 function barChart(data,h=160,clickable=false,activeIdx=null){
@@ -390,51 +416,62 @@ function rHeader(){
   const ri=loading?'<span class="spinning">↻</span>':'↻';
   const lu=lastServerUpdate?lastServerUpdate.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
   const st=serverOnline?`<span class="server-status server-online">● 서버 연결됨 ${lu}</span>`:`<span class="server-status server-offline">● 서버 오프라인</span>`;
-  return`<div class="header"><div><h1>📊 Portfolio Pro</h1><small>${st}</small></div>
+  return`<div class="header"><div><h1>Portfolio Pro</h1><small>${st}</small></div>
     <div class="header-actions"><button class="btn btn-secondary btn-icon" onclick="triggerServerRefresh()" title="서버 시세 갱신">${ri}</button>
-    <button class="btn btn-secondary btn-icon" onclick="openSettings()">⚙️</button>
-    <button class="btn btn-primary btn-sm" onclick="openAddH()">➕ 종목</button></div></div>`}
+    <button class="btn btn-secondary btn-icon" onclick="openSettings()">⚙</button>
+    <button class="btn btn-primary btn-sm" onclick="openAddH()">+ 종목</button></div></div>`}
 
 function rTabs(){const tabs=[{id:'dashboard',i:'📊',l:'대시보드'},{id:'holdings',i:'💼',l:'자산'},{id:'dividends',i:'💰',l:'배당'}];return`<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${currentTab===t.id?'active':''}" onclick="currentTab='${t.id}';render()">${t.i} ${t.l}</button>`).join('')}</div>`}
 function rContent(){if(currentTab==='dashboard')return rDash();if(currentTab==='holdings')return rHold();if(currentTab==='dividends')return rDiv();return''}
 
 function rDash(){
   const{tv,tc,pnl,pp}=totals();const ad=annualDiv(true);const adGross=annualDiv(false);const dy=tv>0?(adGross/tv*100):0;const md=monthDiv(true);const sd=secData();const dly=divLogYear();const pc=pnl>=0?'var(--gain)':'var(--loss)';
-  const tdata=allH().map(h=>{const c=calc(h);return{ticker:h.ticker,value:toK(c.currentValue,h.currency),changePct:c.pnlPct,dailyChange:c.dailyChange}}).filter(d=>d.value>0);
-  let html=`<div class="total-card fade-in"><div class="total-label">💎 총 자산</div><div class="total-value">${fmt(tv)}</div>
+  const tdata=allH().map(h=>{const c=calc(h);return{ticker:h.ticker,name:h.name||h.ticker,value:toK(c.currentValue,h.currency),changePct:c.pnlPct,dailyChange:c.dailyChange}}).filter(d=>d.value>0);
+  let html=`<div class="total-card fade-in"><div class="total-label">총 자산</div><div class="total-value">${fmt(tv)}</div>
     <div class="total-pnl" style="color:${pc}">총 수익 ${fmt(pnl)} (${pct(pp)})</div>
     <div class="total-meta"><span>연간 배당(세후) <b>${fmt(ad)}</b></span><span>배당률 <b>${dy.toFixed(2)}%</b></span><span>환율 <b>${state.settings.exchangeRate.toLocaleString()}</b></span></div></div>`;
-  if(tdata.length>0)html+=`<div class="card fade-in fade-in-d1"><div class="card-title">📈 자산 맵 ${serverOnline?'<span style="color:var(--success);font-size:0.65rem;font-weight:400">● LIVE</span>':''}</div><div class="treemap-wrap">${svgTreemap(tdata)}</div></div>`;
+  if(tdata.length>0)html+=`<div class="card fade-in fade-in-d1"><div class="card-title">📊 자산 맵 ${serverOnline?'<span style="color:var(--success);font-size:0.65rem;font-weight:400">● LIVE</span>':''}</div><div class="treemap-wrap">${svgTreemap(tdata)}</div></div>`;
   if(sd.length>0)html+=`<div class="card fade-in fade-in-d2"><div class="card-title">🎯 섹터 구성</div><div class="sector-row">${svgDonut(sd)}<div class="sector-legend">${sd.map(s=>`<div class="sector-item"><div class="sector-dot" style="background:${s.color}"></div><span style="color:var(--text-secondary)">${s.name}</span><span class="sector-pct">${s.pct}%</span></div>`).join('')}</div></div></div>`;
-  html+=`<div class="card fade-in fade-in-d3"><div class="card-title">📅 월별 예상 배당금 (세후)</div>${barChart(md.map((v,i)=>({label:(i+1)+'월',value:v,color:`rgba(124,131,255,${(0.35+((v/(Math.max(...md)||1))*0.65)).toFixed(2)})`})),160)}</div>`;
-  if(dly.length>0){let gh='';if(dly.length>=2){const l=dly[dly.length-1].value,p=dly[dly.length-2].value,g=p>0?((l-p)/p*100):0;gh=`<div style="margin-top:10px;font-size:0.8rem;color:var(--text-secondary);text-align:center">전년 대비 <b style="color:${g>=0?'var(--success)':'var(--danger)'}">${pct(g)}</b></div>`}html+=`<div class="card fade-in fade-in-d4"><div class="card-title">📊 연간 배당금 추이</div>${barChart(dly.map((d,i)=>({...d,color:`rgba(255,190,61,${(0.35+((i/Math.max(dly.length-1,1))*0.65)).toFixed(2)})`})),160)}${gh}</div>`}
-  if(!state.accounts.length)html+=`<div class="empty fade-in"><div class="icon">🚀</div><p>시작하려면 계좌를 추가해봐!</p><button class="btn btn-primary" onclick="openMod='account';editAcc=null;modalOpen=true;render()">➕ 계좌 추가</button></div>`;
+  const mdA=monthDivActual(new Date().getFullYear());const edArr=md.map((v,i)=>({label:(i+1)+'월',value:v,color:`rgba(255,190,61,${(0.3+((v/(Math.max(...md)||1))*0.7)).toFixed(2)})`}));const adArr=mdA.map((v,i)=>({label:(i+1)+'월',value:v}));html+=`<div class="card fade-in fade-in-d3"><div class="card-title">💰 월별 배당금 (예상 vs 실제)</div>${dualBarChart(edArr,adArr,165)}</div>`;
+  if(dly.length>0){let gh='';if(dly.length>=2){const l=dly[dly.length-1].value,p=dly[dly.length-2].value,g=p>0?((l-p)/p*100):0;gh=`<div style="margin-top:10px;font-size:0.8rem;color:var(--text-secondary);text-align:center">전년 대비 <b style="color:${g>=0?'var(--success)':'var(--danger)'}">${pct(g)}</b></div>`}html+=`<div class="card fade-in fade-in-d4"><div class="card-title">📈 연간 배당금 추이</div>${barChart(dly.map((d,i)=>({...d,color:`rgba(255,190,61,${(0.35+((i/Math.max(dly.length-1,1))*0.65)).toFixed(2)})`})),160)}${gh}</div>`}
+  
+  // 전체 보유 종목 (합산)
+  const merged={};allH().forEach(h=>{const c=calc(h);if(!merged[h.ticker])merged[h.ticker]={ticker:h.ticker,name:h.name,sector:h.sector,currency:h.currency,qty:0,cost:0,val:0,divAT:0,cp:c.currentPrice,ps:c.priceSource,dc:c.dailyChange};const m=merged[h.ticker];m.qty+=h.quantity;m.cost+=c.totalCost;m.val+=c.currentValue;m.divAT+=c.annualDividendAfterTax;if(h.name&&!m.name)m.name=h.name});
+  const mList=Object.values(merged).sort((a,b)=>toK(b.val,b.currency)-toK(a.val,a.currency));
+  if(mList.length>0){
+    html+=`<div class="card fade-in fade-in-d4"><div class="collapsible-header" onclick="dashHoldingsOpen=!dashHoldingsOpen;render()"><div class="card-title" style="margin:0">💼 전체 보유 종목 (${mList.length})</div><span class="acc-toggle ${dashHoldingsOpen?'open':''}">▼</span></div>`;
+    if(dashHoldingsOpen){mList.forEach(m=>{const pnl=m.val-m.cost;const pp=m.cost>0?(pnl/m.cost)*100:0;const pc2=pnl>=0?'var(--gain)':'var(--loss)';const avg=m.qty>0?m.cost/m.qty:0;
+      let daily='';if(m.dc!=null){const dc=m.dc>=0?'var(--gain)':'var(--loss)';daily=`<span style="font-family:var(--mono);font-size:0.7rem;color:${dc};margin-left:6px">${pct(m.dc)}</span>`}
+      html+=`<div class="holding-row" style="cursor:default"><div><div><span class="holding-name">${m.name||m.ticker}</span><span class="holding-ticker">${m.ticker}</span><span class="holding-sector">${m.sector}</span>${daily}</div><div class="holding-meta">${m.qty}${m.sector==='가상자산'?'개':'주'} · 평균 ${fmt(avg,m.currency)}</div></div><div style="text-align:right"><div class="holding-value">${fmt(m.val,m.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(pnl,m.currency)} (${pct(pp)})</div>${m.divAT>0?`<div class="holding-div">배당 ${fmt(m.divAT,m.currency)}/년</div>`:''}</div></div>`})}
+    html+='</div>'}
+
+  if(!state.accounts.length)html+=`<div class="empty fade-in"><div class="icon">🚀</div><p>시작하려면 계좌를 추가해봐!</p><button class="btn btn-primary" onclick="openMod='account';editAcc=null;modalOpen=true;render()">+ 계좌 추가</button></div>`;
   return html;
 }
 
 // 6. 계좌 접기/펴기 + 5. 계좌명 수정
 function rHold(){
-  let html=`<div style="padding:14px 18px 0;display:flex;gap:6px"><button class="btn btn-secondary btn-sm" onclick="openMod='account';editAcc=null;modalOpen=true;render()">➕ 계좌</button><button class="btn btn-primary btn-sm" onclick="openAddH()">➕ 종목</button></div>`;
+  let html=`<div style="padding:14px 18px 0;display:flex;gap:6px"><button class="btn btn-secondary btn-sm" onclick="openMod='account';editAcc=null;modalOpen=true;render()">+ 계좌</button><button class="btn btn-primary btn-sm" onclick="openAddH()">+ 종목</button></div>`;
   state.accounts.forEach(acc=>{
     const hs=(acc.holdings||[]).map(calc);
     let at=0,ac=0;hs.forEach(h=>{at+=toK(h.currentValue,h.currency);ac+=toK(h.totalCost,h.currency)});
     const ap=at-ac,app=ac>0?((ap/ac)*100):0,pc=ap>=0?'var(--gain)':'var(--loss)';
     const isOpen=!accCollapsed[acc.id];
-    const taxBadge=acc.taxRate>0?`<span class="acc-badge acc-badge-tax">🔴 세금 ${acc.taxRate}%</span>`:`<span class="acc-badge acc-badge-notax">✅ 비과세</span>`;
+    const taxBadge=acc.taxRate>0?`<span class="acc-badge acc-badge-tax">TAX ${acc.taxRate}%</span>`:`<span class="acc-badge acc-badge-notax">비과세</span>`;
 
     html+=`<div class="card fade-in">
       <div class="acc-header" onclick="toggleAcc('${acc.id}')">
         <div style="flex:1">
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="acc-name">🏦 ${acc.name}</span>
+            <span class="acc-name">${acc.name}</span>
             <span class="acc-toggle ${isOpen?'open':''}">▼</span>
           </div>
-          <div class="acc-badges">${taxBadge}<span class="acc-badge">📊 ${hs.length}종목</span></div>
+          <div class="acc-badges">${taxBadge}<span class="acc-badge">${hs.length}종목</span></div>
           <div><span class="acc-val">${fmt(at)}</span><span class="acc-pnl" style="color:${pc}">${pct(app)}</span></div>
         </div>
         <div style="display:flex;gap:4px" onclick="event.stopPropagation()">
           <button class="btn btn-secondary btn-sm" onclick="editAccFn('${acc.id}')">✏️</button>
-          <button class="btn btn-danger btn-sm" onclick="delAcc('${acc.id}')">🗑️</button>
+          <button class="btn btn-danger btn-sm" onclick="delAcc('${acc.id}')">삭제</button>
         </div>
       </div>`;
 
@@ -444,13 +481,13 @@ function rHold(){
         const pc2=h.pnl>=0?'var(--gain)':'var(--loss)';
         let src='';
         if(h.priceSource==='finnhub'||h.priceSource==='yahoo'||h.priceSource==='server')src='<span class="price-live">● LIVE</span>';
-        else if(h.priceSource==='upbit')src='<span class="price-live">🔗 업비트</span>';
-        else if(h.priceSource==='manual')src='<span class="price-manual">✏️ 수동</span>';
-        else src='<span class="price-manual">📌 매수가 기준</span>';
+        else if(h.priceSource==='upbit')src='<span class="price-live">● 업비트</span>';
+        else if(h.priceSource==='manual')src='<span class="price-manual">✎ 수동</span>';
+        else src='<span class="price-manual">매수가 기준</span>';
         let daily='';if(h.dailyChange!=null){const dc=h.dailyChange>=0?'var(--gain)':'var(--loss)';daily=`<span style="font-family:var(--mono);font-size:0.7rem;color:${dc};margin-left:6px">오늘 ${pct(h.dailyChange)}</span>`}
         const unitLabel=h.sector==='가상자산'?'개':'주';
-        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span>${daily}</div><div class="holding-meta">${h.name||''} · ${h.quantity}${unitLabel} · 현재가 ${fmt(h.currentPrice,h.currency)} ${src}</div></div>
-          <div style="text-align:right"><div class="holding-value">${fmt(h.currentValue,h.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(h.pnl,h.currency)} (${pct(h.pnlPct)})</div>${h.annualDividend>0?`<div class="holding-div">💸 배당 ${fmt(h.annualDividendAfterTax,h.currency)}/년(세후)</div>`:''}</div></div>`;
+        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-name">${h.name||h.ticker}</span><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span>${daily}</div><div class="holding-meta">${h.name||''} · ${h.quantity}${unitLabel} · 현재가 ${fmt(h.currentPrice,h.currency)} ${src}</div></div>
+          <div style="text-align:right"><div class="holding-value">${fmt(h.currentValue,h.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(h.pnl,h.currency)} (${pct(h.pnlPct)})</div>${h.annualDividend>0?`<div class="holding-div">배당 ${fmt(h.annualDividendAfterTax,h.currency)}/년(세후)</div>`:''}</div></div>`;
       });
     }
     html+=`</div>`;
@@ -462,18 +499,18 @@ function rHold(){
 function rDiv(){
   const ad=annualDiv(true);const adGross=annualDiv(false);const{tv}=totals();const dy=tv>0?(adGross/tv*100):0;const md=monthDiv(true);const dly=divLogYear();
 
-  let html=`<div class="div-summary fade-in"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-size:0.72rem;color:var(--text-muted);font-weight:600">📊 연간 예상 배당금 (세후)</div><div class="big">${fmt(ad)}</div></div><div style="text-align:right"><div style="font-size:0.72rem;color:var(--text-muted);font-weight:600">📈 투자 배당률</div><div class="big">${dy.toFixed(2)}%</div></div></div><div class="sub">월 평균 <b style="color:var(--dividend)">${fmt(ad/12)}</b> · 세전 <span style="color:var(--text-muted)">${fmt(adGross)}</span></div></div>`;
+  let html=`<div class="div-summary fade-in"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-size:0.72rem;color:var(--text-muted);font-weight:600">연간 예상 배당금 (세후)</div><div class="big">${fmt(ad)}</div></div><div style="text-align:right"><div style="font-size:0.72rem;color:var(--text-muted);font-weight:600">투자 배당률</div><div class="big">${dy.toFixed(2)}%</div></div></div><div class="sub">월 평균 <b style="color:var(--dividend)">${fmt(ad/12)}</b> · 세전 <span style="color:var(--text-muted)">${fmt(adGross)}</span></div></div>`;
 
   // 9. 클릭 가능한 월별 차트
-  html+=`<div class="card fade-in fade-in-d1"><div class="card-title">📅 월별 예상 배당금 (세후) <span style="font-size:0.6rem;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">클릭하면 해당 월 종목 확인</span></div>${barChart(md.map((v,i)=>({label:(i+1)+'월',value:v,color:`rgba(255,190,61,${(0.3+((v/(Math.max(...md)||1))*0.7)).toFixed(2)})`})),170,true,selectedDivMonth!=null?selectedDivMonth:null)}`;
+  html+=`<div class="card fade-in fade-in-d1"><div class="card-title">💰 월별 예상 배당금 (세후) <span style="font-size:0.6rem;color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">클릭하면 해당 월 종목 확인</span></div>${dualBarChart(md.map((v,i)=>({label:(i+1)+'월',value:v,color:`rgba(255,190,61,${(0.3+((v/(Math.max(...md)||1))*0.7)).toFixed(2)})`})),monthDivActual(new Date().getFullYear()).map((v,i)=>({label:(i+1)+'월',value:v})),175,true,selectedDivMonth!=null?selectedDivMonth:null)}`;
 
   // 선택된 월의 종목 표시
   if(selectedDivMonth!=null){
     const mo=selectedDivMonth+1;
     const mh=monthDivHoldings(mo);
-    html+=`<div class="month-filter-info"><b>📍 ${mo}월</b> 배당 종목 (${mh.length}개)<button class="clear-btn" onclick="selectedDivMonth=null;render()">전체보기 ✕</button></div>`;
+    html+=`<div class="month-filter-info"><b>${mo}월</b> 배당 종목 (${mh.length}개)<button class="clear-btn" onclick="selectedDivMonth=null;render()">전체보기 ✕</button></div>`;
     mh.forEach(h=>{
-      html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-top:4px;border-radius:6px;background:rgba(255,255,255,0.02)"><div><span style="font-family:var(--mono);font-weight:700;font-size:0.85rem">${h.ticker}</span><span style="font-size:0.72rem;color:var(--text-muted);margin-left:6px">${h.name||''}</span></div><span style="font-family:var(--mono);font-weight:700;color:var(--dividend);font-size:0.85rem">💰 ${fmt(h.monthlyDivKRW)}</span></div>`;
+      html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-top:4px;border-radius:6px;background:rgba(255,255,255,0.02)"><div><span style="font-weight:700;font-size:0.85rem">${h.name||h.ticker}</span><span style="font-family:var(--mono);font-size:0.68rem;color:var(--text-muted);margin-left:6px">${h.ticker}</span></div><span style="font-family:var(--mono);font-weight:700;color:var(--dividend);font-size:0.85rem">${fmt(h.monthlyDivKRW)}</span></div>`;
     });
   }
   html+='</div>';
@@ -487,7 +524,7 @@ function rDiv(){
     </div>`;
 
   if(divDetailOpen){
-    if(!dh.length)html+='<div style="color:var(--text-muted);font-size:0.82rem;text-align:center;padding:16px">배당 정보가 있는 종목이 없어 😔</div>';
+    if(!dh.length)html+='<div style="color:var(--text-muted);font-size:0.82rem;text-align:center;padding:16px">배당 정보가 있는 종목이 없어</div>';
     dh.forEach(h=>{
       const c=calc(h);
       const months=getDivMonths(h);
@@ -497,21 +534,29 @@ function rDiv(){
       const expK=toK(c.annualDividendAfterTax,h.currency);
       const diff=actualT-expK;
       const taxInfo=h.taxRate>0?` · 세율 ${h.taxRate}%`:'';
-      html+=`<div class="div-detail-row"><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--mono);font-weight:700">${h.ticker}</span><span style="font-size:0.72rem;color:var(--text-muted);margin-left:8px">📅 ${monthLabels}</span></div><span style="font-family:var(--mono);font-weight:700;color:var(--dividend)">💸 ${fmt(c.annualDividendAfterTax,h.currency)}/년</span></div><div style="font-size:0.78rem;color:var(--text-secondary);margin-top:4px">주당 ${fmt(c.effectiveDPS,h.currency)} × ${h.quantity}주 · 배당률 ${c.dividendYield.toFixed(2)}%${taxInfo}</div>${logs.length>0?`<div class="div-actual-bar">✅ 실제 수령: <b style="color:var(--success)">${fmt(actualT)}</b><span style="color:${diff>=0?'var(--success)':'var(--danger)'};margin-left:8px">(예상 대비 ${diff>=0?'✓ +':'✗ '}${fmt(diff)})</span></div>`:''}</div>`;
+      html+=`<div class="div-detail-row"><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-weight:700">${h.name||h.ticker}</span><span style="font-family:var(--mono);font-size:0.68rem;color:var(--text-muted);margin-left:6px">${h.ticker}</span><span style="font-size:0.72rem;color:var(--text-muted);margin-left:8px">${monthLabels}</span></div><span style="font-family:var(--mono);font-weight:700;color:var(--dividend)">${fmt(c.annualDividendAfterTax,h.currency)}/년</span></div><div style="font-size:0.78rem;color:var(--text-secondary);margin-top:4px">주당 ${fmt(c.effectiveDPS,h.currency)} × ${h.quantity}주 · 배당률 ${c.dividendYield.toFixed(2)}%${taxInfo}</div>${logs.length>0?`<div class="div-actual-bar">실제 수령: <b style="color:var(--success)">${fmt(actualT)}</b><span style="color:${diff>=0?'var(--success)':'var(--danger)'};margin-left:8px">(예상 대비 ${diff>=0?'+':''}${fmt(diff)})</span></div>`:''}</div>`;
     });
   }
   html+='</div>';
 
   // 10. 배당 입금 기록 - 항상 보이도록 배치
-  html+=`<div class="card fade-in fade-in-d3"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="card-title" style="margin:0">📝 배당 입금 기록</div><button class="btn btn-primary btn-sm" onclick="openMod='divLog';modalOpen=true;render()">➕ 기록</button></div>`;
-  if(!state.dividendLogs.length)html+='<div style="color:var(--text-muted);font-size:0.82rem;text-align:center;padding:16px">배당금 입금 기록을 남겨봐! 💰</div>';
-  [...state.dividendLogs].sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(l=>{html+=`<div class="log-row"><div><span class="ticker">${l.ticker}</span><span class="date">${l.date}</span>${l.memo?`<span class="date"> · ${l.memo}</span>`:''}</div><div style="display:flex;align-items:center"><span class="amount">💵 ${fmt(l.amount,l.currency)}</span><button class="del-btn" onclick="event.stopPropagation();delDivLog('${l.id}')">✕</button></div></div>`});
+  html+=`<div class="card fade-in fade-in-d3"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="card-title" style="margin:0">📝 배당 입금 기록</div><button class="btn btn-primary btn-sm" onclick="openMod='divLog';modalOpen=true;render()">+ 기록</button></div>`;
+  // 연도 탭
+  const yrs=divLogYears();const cy=new Date().getFullYear();if(!yrs.includes(cy))yrs.push(cy);yrs.sort();
+  html+=`<div class="year-tabs"><button class="year-tab ${divLogYear_filter==='all'?'active':''}" onclick="divLogYear_filter='all';render()">전체</button>`;
+  yrs.forEach(y=>{html+=`<button class="year-tab ${divLogYear_filter===y?'active':''}" onclick="divLogYear_filter=${y};render()">${y}</button>`});
+  html+='</div>';
+  const fLogs=[...state.dividendLogs].filter(l=>divLogYear_filter==='all'||new Date(l.date).getFullYear()===divLogYear_filter).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const fTotal=fLogs.reduce((s,l)=>s+toK(l.amount,l.currency),0);
+  if(fTotal>0)html+=`<div style="padding:6px 10px;margin-bottom:8px;border-radius:6px;background:rgba(74,222,128,0.08);font-size:0.82rem"><span style="color:var(--text-secondary)">${divLogYear_filter==='all'?'누적':''+divLogYear_filter+'년'} 합계:</span> <b style="color:var(--success)">${fmt(fTotal)}</b></div>`;
+  if(!fLogs.length)html+='<div style="color:var(--text-muted);font-size:0.82rem;text-align:center;padding:16px">배당금 입금 기록이 없어</div>';
+  fLogs.forEach(l=>{html+=`<div class="log-row"><div><span class="ticker">${(allH().find(x=>x.ticker===l.ticker)||{}).name||l.ticker}</span><span class="date">${l.date}</span>${l.memo?`<span class="date"> · ${l.memo}</span>`:''}</div><div style="display:flex;align-items:center"><span class="amount">${fmt(l.amount,l.currency)}</span><button class="del-btn" onclick="event.stopPropagation();delDivLog('${l.id}')">×</button></div></div>`});
 
   // 연도별 실제 배당금
   if(dly.length>0){
     let gh='';
     if(dly.length>=2){const l=dly[dly.length-1].value,p=dly[dly.length-2].value,g=p>0?((l-p)/p*100):0;gh=`<div style="margin-top:8px;font-size:0.78rem;color:var(--text-secondary);text-align:center">${dly[dly.length-1].label} vs ${dly[dly.length-2].label}: <b style="color:${g>=0?'var(--success)':'var(--danger)'}">${pct(g)}</b></div>`}
-    html+=`<div style="margin-top:16px"><div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">📊 연도별 실제 배당금</div>${barChart(dly.map((d,i)=>({...d,color:`rgba(74,222,128,${(0.35+((i/Math.max(dly.length-1,1))*0.65)).toFixed(2)})`})),140)}${gh}</div>`;
+    html+=`<div style="margin-top:16px"><div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);margin-bottom:8px">연도별 실제 배당금</div>${barChart(dly.map((d,i)=>({...d,color:`rgba(74,222,128,${(0.35+((i/Math.max(dly.length-1,1))*0.65)).toFixed(2)})`})),140)}${gh}</div>`;
   }
   html+='</div>';
   return html;
@@ -599,13 +644,18 @@ function mHold(){
     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn btn-primary" style="flex:1" onclick="saveH(${isE})">${isE?'수정':'추가'}</button>${isE?`<button class="btn btn-danger" onclick="delH('${h.accountId}','${h.id}')">삭제</button>`:''}
     <button class="btn btn-secondary" onclick="closeMod()">취소</button></div>`}
 
-function mDivLog(){const ticks=[...new Set(allH().map(h=>h.ticker))];const opts=ticks.map(t=>`<option value="${t}">${t}</option>`).join('');const today=new Date().toISOString().slice(0,10);
+function mDivLog(){
+  const uniq={};allH().forEach(h=>{if(!uniq[h.ticker])uniq[h.ticker]={ticker:h.ticker,name:h.name||h.ticker,currency:h.currency,sector:h.sector,qty:0};uniq[h.ticker].qty+=h.quantity});
+  const items=Object.values(uniq);
+  const today=new Date().toISOString().slice(0,10);
+  let list='';items.forEach(m=>{list+=`<div class="ticker-option" onclick="selectDivLogTicker('${m.ticker}',this)"><div><div class="name">${m.name}</div><div class="code">${m.ticker} · ${m.qty}${m.sector==='가상자산'?'개':'주'}</div></div><div style="font-family:var(--mono);font-size:0.78rem;color:var(--text-muted)">${m.currency}</div></div>`});
   return`<div class="modal-header"><h3>배당금 기록 추가</h3><button class="modal-close" onclick="closeMod()">×</button></div>
     <div class="field"><label>날짜</label><input id="f-dldate" type="date" value="${today}"></div>
-    <div class="field"><label>종목</label><select id="f-dltick"><option value="">선택...</option>${opts}</select></div>
-    <div class="row"><div class="field"><label>배당금액</label><input id="f-dlamt" type="number" placeholder="0"></div><div class="field"><label>통화</label><select id="f-dlcur"><option value="KRW">KRW</option><option value="USD">USD</option></select></div></div>
+    <div class="field"><label>종목 선택</label><input type="hidden" id="f-dltick" value=""><div style="max-height:200px;overflow-y:auto">${list}</div></div>
+    <div class="row"><div class="field"><label>배당금액</label><input id="f-dlamt" type="number" placeholder="0" step="any"></div><div class="field"><label>통화</label><select id="f-dlcur"><option value="KRW">KRW</option><option value="USD">USD</option></select></div></div>
     <div class="field"><label>메모</label><input id="f-dlmemo" placeholder="선택사항"></div>
     <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveDivLog()">기록 추가</button>`}
+function selectDivLogTicker(ticker,el){document.getElementById('f-dltick').value=ticker;document.querySelectorAll('.ticker-option').forEach(e=>e.classList.remove('selected'));el.classList.add('selected');const h=allH().find(x=>x.ticker===ticker);if(h)document.getElementById('f-dlcur').value=h.currency}
 
 function mSettings(){return`<div class="modal-header"><h3>설정</h3><button class="modal-close" onclick="closeMod()">×</button></div>
     <div class="field"><label>USD/KRW 환율 ${serverOnline?'<span style="color:var(--success)">● 서버에서 자동 갱신</span>':''}</label><input id="f-rate" type="number" value="${state.settings.exchangeRate}" placeholder="1450"></div>
