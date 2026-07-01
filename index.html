@@ -309,7 +309,12 @@ function allH(){return state.accounts.flatMap(a=>(a.holdings||[]).map(h=>({...h,
 function getP(h){
   if(h.manualPrice)return{price:h.manualPrice,source:'manual',change:null};
   const sp=serverPrices[h.ticker];
-  if(sp)return{price:sp.price,source:sp.source||'server',change:sp.changePercent||null};
+  if(sp){
+    // changePercent가 0이어도 유효한 값 → ||null 쓰면 0이 null로 처리되는 버그 방지
+    const chg=(sp.changePercent!=null&&sp.changePercent!==''&&!isNaN(Number(sp.changePercent)))
+      ?Number(sp.changePercent):null;
+    return{price:sp.price,source:sp.source||'server',change:chg};
+  }
   return{price:h.avgPrice,source:'fallback',change:null};
 }
 
@@ -384,35 +389,7 @@ function annualDiv(afterTax=true){return monthDiv(afterTax).reduce((s,m)=>s+m,0)
 // ═══════════════════════════════════════════
 // SVG
 // ═══════════════════════════════════════════
-function svgTreemap(items,w=700,h=360){
-  if(!items.length)return'';
-  const total=items.reduce((s,i)=>s+Math.abs(i.value),0);if(total===0)return'';
-  const sorted=[...items].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));
-  const rects=[];
-  function strip(row,x,y,cw,ch,hz){const rt=row.reduce((s,i)=>s+Math.abs(i.value),0);let off=0;row.forEach(item=>{const ratio=Math.abs(item.value)/rt;if(hz){const rw=cw*ratio;rects.push({...item,x:x+off,y,w:rw,h:ch});off+=rw}else{const rh=ch*ratio;rects.push({...item,x,y:y+off,w:cw,h:rh});off+=rh}})}
-  let rem=[...sorted],cx=0,cy=0,cw=w,ch=h;
-  while(rem.length>0){const hz=cw>=ch;const remT=rem.reduce((s,i)=>s+Math.abs(i.value),0);let row=[rem[0]],rowT=Math.abs(rem[0].value);for(let i=1;i<rem.length&&row.length<5;i++){row.push(rem[i]);rowT+=Math.abs(rem[i].value)}const sr=rowT/remT;if(hz){const sw=cw*sr;strip(row,cx,cy,sw,ch,false);cx+=sw;cw-=sw}else{const sh=ch*sr;strip(row,cx,cy,cw,sh,true);cy+=sh;ch-=sh}rem=rem.slice(row.length)}
-  let svg=`<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
-  rects.forEach(r=>{
-    // dailyChange: 서버가 prevClose 대비로 계산한 일간수익률(%)
-    // null이면 시세 미수신 → 회색으로 표시
-    const hasData=r.dailyChange!=null;
-    const cp=hasData?r.dailyChange:0;
-    const op=hasData?Math.min(0.3+Math.abs(cp)*0.06,0.88):0.25;
-    const fill=!hasData?'rgba(80,85,110,0.4)':cp>0?`rgba(255,107,107,${op})`:cp<0?`rgba(91,156,255,${op})`:'rgba(100,116,139,0.45)';
-    const fs=Math.max(7,Math.min(r.w/7.5,r.h/3.5,16));
-    const show=r.w>45&&r.h>28;
-    const label=(r.name||r.ticker).length>8?(r.name||r.ticker).slice(0,7)+'…':(r.name||r.ticker);
-    const pctLabel=hasData?pct(cp):'--';
-    svg+=`<rect x="${r.x+1}" y="${r.y+1}" width="${Math.max(0,r.w-2)}" height="${Math.max(0,r.h-2)}" fill="${fill}" rx="4" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>`;
-    if(show){
-      svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2-fs*0.35}" text-anchor="middle" fill="white" font-size="${fs}" font-weight="700" font-family="'Noto Sans KR',sans-serif">${label}</text>`;
-      svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*0.65}" text-anchor="middle" fill="rgba(255,255,255,0.85)" font-size="${fs*0.72}" font-family="'JetBrains Mono',monospace">${pctLabel}</text>`;
-      if(r.w>85&&r.h>50)svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*1.55}" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="${fs*0.55}" font-family="'JetBrains Mono',monospace">${fmt(r.value)}</text>`;
-    }
-  });
-  return svg+'</svg>';
-}
+function svgTreemap(items,w=700,h=360){if(!items.length)return'';const total=items.reduce((s,i)=>s+Math.abs(i.value),0);if(total===0)return'';const sorted=[...items].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value));const rects=[];function strip(row,x,y,cw,ch,hz){const rt=row.reduce((s,i)=>s+Math.abs(i.value),0);let off=0;row.forEach(item=>{const ratio=Math.abs(item.value)/rt;if(hz){const rw=cw*ratio;rects.push({...item,x:x+off,y,w:rw,h:ch});off+=rw}else{const rh=ch*ratio;rects.push({...item,x,y:y+off,w:cw,h:rh});off+=rh}})}let rem=[...sorted],cx=0,cy=0,cw=w,ch=h;while(rem.length>0){const hz=cw>=ch;const remT=rem.reduce((s,i)=>s+Math.abs(i.value),0);let row=[rem[0]],rowT=Math.abs(rem[0].value);for(let i=1;i<rem.length&&row.length<5;i++){row.push(rem[i]);rowT+=Math.abs(rem[i].value)}const sr=rowT/remT;if(hz){const sw=cw*sr;strip(row,cx,cy,sw,ch,false);cx+=sw;cw-=sw}else{const sh=ch*sr;strip(row,cx,cy,cw,sh,true);cy+=sh;ch-=sh}rem=rem.slice(row.length)}let svg=`<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;rects.forEach(r=>{const cp=r.dailyChange!=null?r.dailyChange:(r.changePct||0);const op=Math.min(0.3+Math.abs(cp)*0.04,0.85);const fill=cp>0?`rgba(255,107,107,${op})`:cp<0?`rgba(91,156,255,${op})`:'rgba(100,116,139,0.35)';const fs=Math.max(7,Math.min(r.w/7.5,r.h/3.5,16));const show=r.w>45&&r.h>28;svg+=`<rect x="${r.x+1}" y="${r.y+1}" width="${Math.max(0,r.w-2)}" height="${Math.max(0,r.h-2)}" fill="${fill}" rx="4" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>`;if(show){svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2-fs*0.35}" text-anchor="middle" fill="white" font-size="${fs}" font-weight="700" font-family="'Noto Sans KR',sans-serif">${(r.name||r.ticker).length>8?(r.name||r.ticker).slice(0,7)+'…':(r.name||r.ticker)}</text>`;svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*0.65}" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="${fs*0.72}" font-family="'JetBrains Mono',monospace">${pct(cp)}</text>`;if(r.w>85&&r.h>50)svg+=`<text x="${r.x+r.w/2}" y="${r.y+r.h/2+fs*1.5}" text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="${fs*0.55}" font-family="'JetBrains Mono',monospace">${fmt(r.value)}</text>`}});return svg+'</svg>'}
 function svgDonut(data,sz=130){const total=data.reduce((s,d)=>s+d.value,0);if(total===0)return'';let cum=0;const cx=sz/2,cy=sz/2,r=sz*0.38,sw=sz*0.14;let svg=`<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">`;data.forEach(d=>{const start=cum/total;cum+=d.value;const end=cum/total;const sa=start*Math.PI*2-Math.PI/2,ea=end*Math.PI*2-Math.PI/2;const la=end-start>0.5?1:0;svg+=`<path d="M ${cx+r*Math.cos(sa)} ${cy+r*Math.sin(sa)} A ${r} ${r} 0 ${la} 1 ${cx+r*Math.cos(ea)} ${cy+r*Math.sin(ea)}" fill="none" stroke="${d.color}" stroke-width="${sw}"/>`});return svg+'</svg>'}
 
 
@@ -529,13 +506,9 @@ function rHold(){
         else if(h.priceSource==='upbit')src='<span class="price-live">● 업비트</span>';
         else if(h.priceSource==='manual')src='<span class="price-manual">✎ 수동</span>';
         else src='<span class="price-manual">매수가 기준</span>';
-        // 일간수익률 표시 (dailyChange = prevClose 대비 %)
-        const dcVal=h.dailyChange;
-        const dcColor=dcVal!=null?(dcVal>=0?'var(--gain)':'var(--loss)'):'var(--text-muted)';
-        const dcStr=dcVal!=null?` <span style="font-family:var(--mono);font-size:0.72rem;color:${dcColor}">(${pct(dcVal)})</span>`:'';
+        let daily='';if(h.dailyChange!=null){const dc=h.dailyChange>=0?'var(--gain)':'var(--loss)';daily=`<span style="font-family:var(--mono);font-size:0.7rem;color:${dc};margin-left:6px">오늘 ${pct(h.dailyChange)}</span>`}
         const unitLabel=h.sector==='가상자산'?'개':'주';
-        const avgPriceStr=fmt(h.avgPrice,h.currency);
-        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-name">${h.name||h.ticker}</span><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span></div><div class="holding-meta">${h.quantity}${unitLabel} · 평균 ${avgPriceStr} · 현재가 ${fmt(h.currentPrice,h.currency)}${dcStr} ${src}</div></div>
+        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-name">${h.name||h.ticker}</span><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span>${daily}</div><div class="holding-meta">${h.name||''} · ${h.quantity}${unitLabel} · 현재가 ${fmt(h.currentPrice,h.currency)} ${src}</div></div>
           <div style="text-align:right"><div class="holding-value">${fmt(h.currentValue,h.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(h.pnl,h.currency)} (${pct(h.pnlPct)})</div>${h.annualDividend>0?`<div class="holding-div">배당 ${fmt(h.annualDividendAfterTax,h.currency)}/년(세후)</div>`:''}</div></div>`;
       });
     }
