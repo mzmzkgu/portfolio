@@ -309,12 +309,7 @@ function allH(){return state.accounts.flatMap(a=>(a.holdings||[]).map(h=>({...h,
 function getP(h){
   if(h.manualPrice)return{price:h.manualPrice,source:'manual',change:null};
   const sp=serverPrices[h.ticker];
-  if(sp){
-    // changePercent가 0이어도 유효한 값 → ||null 쓰면 0이 null로 처리되는 버그 방지
-    const chg=(sp.changePercent!=null&&sp.changePercent!==''&&!isNaN(Number(sp.changePercent)))
-      ?Number(sp.changePercent):null;
-    return{price:sp.price,source:sp.source||'server',change:chg};
-  }
+  if(sp)return{price:sp.price,source:sp.source||'server',change:sp.changePercent||null};
   return{price:h.avgPrice,source:'fallback',change:null};
 }
 
@@ -508,7 +503,7 @@ function rHold(){
         else src='<span class="price-manual">매수가 기준</span>';
         let daily='';if(h.dailyChange!=null){const dc=h.dailyChange>=0?'var(--gain)':'var(--loss)';daily=`<span style="font-family:var(--mono);font-size:0.7rem;color:${dc};margin-left:6px">오늘 ${pct(h.dailyChange)}</span>`}
         const unitLabel=h.sector==='가상자산'?'개':'주';
-        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-name">${h.name||h.ticker}</span><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span>${daily}</div><div class="holding-meta">${h.name||''} · ${h.quantity}${unitLabel} · 현재가 ${fmt(h.currentPrice,h.currency)} ${src}</div></div>
+        html+=`<div class="holding-row" onclick="editHolding('${acc.id}','${h.id}')"><div><div><span class="holding-name">${h.name||h.ticker}</span><span class="holding-ticker">${h.ticker}</span><span class="holding-sector">${h.sector}</span>${daily}</div><div class="holding-meta">${h.quantity}${unitLabel} · 평균 ${fmt(h.avgPrice,h.currency)} · 현재가 ${fmt(h.currentPrice,h.currency)} ${src}</div></div>
           <div style="text-align:right"><div class="holding-value">${fmt(h.currentValue,h.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(h.pnl,h.currency)} (${pct(h.pnlPct)})</div>${h.annualDividend>0?`<div class="holding-div">배당 ${fmt(h.annualDividendAfterTax,h.currency)}/년(세후)</div>`:''}</div></div>`;
       });
     }
