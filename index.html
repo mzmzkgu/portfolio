@@ -649,7 +649,6 @@ function rDash(){
   html+=rAnnualMiningCard();
   if(sd.length>0)html+=`<div class="card fade-in fade-in-d2"><div class="card-title">🎯 섹터 구성</div><div class="sector-row">${svgDonut(sd)}<div class="sector-legend">${sd.map(s=>`<div class="sector-item"><div class="sector-dot" style="background:${s.color}"></div><span style="color:var(--text-secondary)">${s.name}</span><span class="sector-pct">${s.pct}%</span></div>`).join('')}</div></div></div>`;
   const mdA=monthDivActual(new Date().getFullYear());const edArr=md.map((v,i)=>({label:(i+1)+'월',value:v,color:`rgba(255,190,61,${(0.3+((v/(Math.max(...md)||1))*0.7)).toFixed(2)})`}));const adArr=mdA.map((v,i)=>({label:(i+1)+'월',value:v}));html+=`<div class="card fade-in fade-in-d3"><div class="card-title">💰 월별 배당금 (예상 vs 실제)</div>${dualBarChart(edArr,adArr,165)}</div>`;
-  if(dly.length>0){let gh='';if(dly.length>=2){const l=dly[dly.length-1].value,p=dly[dly.length-2].value,g=p>0?((l-p)/p*100):0;gh=`<div style="margin-top:10px;font-size:0.8rem;color:var(--text-secondary);text-align:center">전년 대비 <b style="color:${g>=0?'var(--success)':'var(--danger)'}">${pct(g)}</b></div>`}html+=`<div class="card fade-in fade-in-d4"><div class="card-title">📈 연간 배당금 추이</div>${barChart(dly.map((d,i)=>({...d,color:`rgba(255,190,61,${(0.35+((i/Math.max(dly.length-1,1))*0.65)).toFixed(2)})`})),160)}${gh}</div>`}
   
   // 전체 보유 종목 (합산)
   const merged={};allH().forEach(h=>{const c=calc(h);if(!merged[h.ticker])merged[h.ticker]={ticker:h.ticker,name:h.name,sector:h.sector,currency:h.currency,qty:0,cost:0,val:0,divAT:0,cp:c.currentPrice,ps:c.priceSource,dc:c.dailyChange};const m=merged[h.ticker];m.qty+=h.quantity;m.cost+=c.totalCost;m.val+=c.currentValue;m.divAT+=c.annualDividendAfterTax;if(h.name&&!m.name)m.name=h.name});
@@ -657,8 +656,25 @@ function rDash(){
   if(mList.length>0){
     html+=`<div class="card fade-in fade-in-d4"><div class="collapsible-header" onclick="dashHoldingsOpen=!dashHoldingsOpen;render()"><div class="card-title" style="margin:0">💼 전체 보유 종목 (${mList.length})</div><span class="acc-toggle ${dashHoldingsOpen?'open':''}">▼</span></div>`;
     if(dashHoldingsOpen){mList.forEach(m=>{const pnl=m.val-m.cost;const pp=m.cost>0?(pnl/m.cost)*100:0;const pc2=pnl>=0?'var(--gain)':'var(--loss)';const avg=m.qty>0?m.cost/m.qty:0;
-      let daily='';if(m.dc!=null){const dc=m.dc>=0?'var(--gain)':'var(--loss)';daily=`<span style="font-family:var(--mono);font-size:0.7rem;color:${dc};margin-left:6px">${pct(m.dc)}</span>`}
-      html+=`<div class="holding-row" style="cursor:default"><div><div><span class="holding-name">${m.name||m.ticker}</span><span class="holding-ticker">${m.ticker}</span><span class="holding-sector">${m.sector}</span>${daily}</div><div class="holding-meta">${m.qty}${m.sector==='가상자산'?'개':'주'} · 평균 ${fmt(avg,m.currency)}</div></div><div style="text-align:right"><div class="holding-value">${fmt(m.val,m.currency)}</div><div class="holding-pnl" style="color:${pc2}">${fmt(pnl,m.currency)} (${pct(pp)})</div>${m.divAT>0?`<div class="holding-div">배당 ${fmt(m.divAT,m.currency)}/년</div>`:''}</div></div>`})}
+      let src='';const _live=m.ps&&(m.ps==='finnhub'||m.ps==='yahoo'||m.ps==='server'||m.ps.startsWith('kis_'));
+      if(_live)src='<span class="price-live">● LIVE</span>';
+      else if(m.ps==='upbit')src='<span class="price-live">● 업비트</span>';
+      else if(m.ps==='manual')src='<span class="price-manual">✎ 수동</span>';
+      else src='<span class="price-manual">매수가 기준</span>';
+      const unitLabel=m.sector==='가상자산'?'개':'주';
+      const dcCol=m.dc!=null?(m.dc>=0?'var(--gain)':'var(--loss)'):'var(--text-primary)';
+      ensureHistory(m.ticker,m.sector);const hist=histCache[m.ticker];
+      const chartHtml=hist&&hist.status==='ok'?svgSparkline(hist.closes,avg):hist&&hist.status==='loading'?'<div class="holding-chart-loading">로딩중</div>':'<div class="holding-chart-loading">차트 없음</div>';
+      html+=`<div class="holding-row" style="cursor:default">
+          <div style="flex:1;min-width:0">
+            <div><span class="holding-name">${m.name||m.ticker}</span><span class="holding-ticker">${m.ticker}</span><span class="holding-sector">${m.sector}</span></div>
+            <div class="holding-stat-line">현재가 <b style="color:${dcCol}">${fmt(m.cp,m.currency)}${m.dc!=null?' ('+pct(m.dc)+')':''}</b> ${src}</div>
+            <div class="holding-stat-line">평단가 ${fmt(avg,m.currency)} · ${m.qty}${unitLabel}</div>
+            <div class="holding-stat-line">평가액 <b style="color:${pc2}">${fmt(m.val,m.currency)} (${pct(pp)})</b></div>
+            ${m.divAT>0?`<div class="holding-stat-line" style="color:var(--dividend)">배당액 ${fmt(m.divAT,m.currency)}/년(세후)</div>`:''}
+          </div>
+          <div class="holding-chart-wrap">${chartHtml}</div>
+        </div>`})}
     html+='</div>'}
 
   if(!state.accounts.length)html+=`<div class="empty fade-in"><div class="icon">🚀</div><p>시작하려면 계좌를 추가해봐!</p><button class="btn btn-primary" onclick="openMod='account';editAcc=null;modalOpen=true;render()">+ 계좌 추가</button></div>`;
