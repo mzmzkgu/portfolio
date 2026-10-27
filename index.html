@@ -28,7 +28,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;bac
 .btn-sm{padding:5px 10px;font-size:0.75rem}.btn-icon{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem}
 .btn-warn{background:rgba(255,190,61,0.12);color:var(--dividend)}
 .tabs{display:flex;gap:3px;padding:4px;margin:14px 18px 0;background:rgba(var(--fx),0.03);border-radius:12px}
-.tab-btn{flex:1;padding:10px 4px;border:none;border-radius:9px;background:transparent;color:var(--text-muted);font-family:var(--sans);font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.25s}
+.tab-btn{flex:1;white-space:nowrap;padding:10px 2px;border:none;border-radius:9px;background:transparent;color:var(--text-muted);font-family:var(--sans);font-size:0.82rem;font-weight:600;cursor:pointer;transition:all 0.25s}
 .tab-btn.active{background:var(--accent-glow);color:var(--accent-text);box-shadow:0 0 12px rgba(var(--accent-rgb),0.1)}
 .card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin:14px 18px 0;transition:border-color 0.2s}.card:hover{border-color:rgba(var(--border-rgb),0.18)}
 .card-title{font-size:0.8rem;font-weight:600;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:0.8px}
@@ -122,6 +122,17 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .mining-progress-wrap{margin-top:10px;height:5px;border-radius:4px;background:rgba(var(--fx),0.07);overflow:hidden}
 .mining-progress-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,#ffbe3d,#ff8f3d);transition:width 0.4s ease}
 .mining-info{font-size:0.72rem;color:var(--text-secondary);margin-top:8px;font-family:var(--mono)}
+.snap-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.snap-tbl{border-collapse:separate;border-spacing:0;font-family:var(--mono);font-size:0.7rem;min-width:100%}
+.snap-tbl th,.snap-tbl td{padding:6px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);min-width:84px}
+.snap-tbl th{font-family:var(--sans);color:var(--text-secondary);font-weight:700;font-size:0.72rem;position:sticky;top:0}
+.snap-tbl .lab{position:sticky;left:0;z-index:2;min-width:104px;text-align:left;background:var(--bg-base);font-family:var(--sans);color:var(--text-secondary);border-right:1px solid var(--border)}
+.snap-tbl .snap-sec td{background:rgba(var(--accent-rgb),0.1);color:var(--accent-text);font-weight:700;font-family:var(--sans)}
+.snap-tbl .snap-sec .lab{background:var(--bg-base);box-shadow:inset 0 0 0 100px rgba(var(--accent-rgb),0.1)}
+.snl{margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border)}
+.snl-in{width:100%;min-width:0;padding:7px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;color:var(--text-primary);font-family:var(--mono);font-size:0.78rem;outline:none}
+.snl-in:focus{border-color:var(--border-focus)}.snl-est{border-color:rgba(255,190,61,0.7)}
+.snap-tbl .snap-main td{font-weight:700;color:var(--text-primary)}
 </style>
 </head>
 <body>
@@ -183,6 +194,7 @@ function saveSt(){localStorage.setItem(STORE,JSON.stringify(state))}
 function uid(){return Math.random().toString(36).slice(2,10)}
 state=loadSt();
 if(!state.settings)state.settings={exchangeRate:1450};
+if(!state.snapshots)state.snapshots={};
 applyTheme();
 // 기존 계좌에 taxRate 없으면 기본값 추가
 state.accounts.forEach(a=>{if(a.taxRate===undefined)a.taxRate=15});
@@ -204,6 +216,7 @@ async function fetchPricesFromServer(){
       saveSt();
       lastServerUpdate=d.lastUpdate?new Date(d.lastUpdate):new Date();
       serverOnline=true;
+      loadServerSnaps();
     }
   }catch(e){
     serverOnline=false;
@@ -604,9 +617,341 @@ function barChart(data,h=160,clickable=false,activeIdx=null){
 let toastT;function showToast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),3000)}
 
 // ═══════════════════════════════════════════
+// 투자 결산 (월말 스냅샷)
+//  - 스냅샷 = 기준일의 '종목별 수량 × 그날 가격' + 그날 환율/S&P500 (+ 그룹별 입출금)을 통째로 기록
+//    → 이후 매수/매도해도 과거 기록은 바뀌지 않고, 전량 매도한 종목도 그 달 기록엔 남음
+//  - 데이터는 전부 브라우저(localStorage)에만 저장. 서버는 '가격'만 제공 (/snapshots, /price_on)
+// ═══════════════════════════════════════════
+let snapYear=new Date().getFullYear(),snapDraft=null,serverSnaps={},snapSyncAt=0,snapScrollX=null,snapKeepScroll=false,snapToken=0;
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
+function snapKey(y,m){return y+'-'+String(m).padStart(2,'0')}
+function fmtD(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function snapNum(v){return parseFloat(String(v).replace(/,/g,''))||0}
+// 결산 기준일: 말일, 토/일이면 직전 금요일 (평일 공휴일은 미처리 → 날짜는 직접 바꿀 수 있음)
+function snapTarget(y,m){const d=new Date(y,m,0);while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()-1);return fmtD(d)}
+function snapPrevMonth(){const n=new Date();return n.getMonth()===0?[n.getFullYear()-1,12]:[n.getFullYear(),n.getMonth()]}
+function snapGroupOf(a){const g=state.settings.snapGroups&&state.settings.snapGroups[a.id];return(g&&g.trim())||a.name}
+function snapGroupNames(extra){
+  const names=[];const add=n=>{if(n&&!names.includes(n))names.push(n)};
+  state.accounts.forEach(a=>add(snapGroupOf(a)));
+  Object.keys(state.snapshots).sort().forEach(k=>{const s=state.snapshots[k];(s.lines||[]).forEach(l=>add(l.g));Object.keys(s.flows||{}).forEach(add)});
+  if(extra){(extra.lines||[]).forEach(l=>add(l.g));Object.keys(extra.flows||{}).forEach(add)}
+  return names;
+}
+async function loadServerSnaps(force){
+  if(!force&&Date.now()-snapSyncAt<600000)return;
+  snapSyncAt=Date.now();
+  try{const r=await fetch(`${API_BASE}/snapshots`,{signal:AbortSignal.timeout(10000)});const d=await r.json();serverSnaps=d.snapshots||{};if(currentTab==='settle'&&!modalOpen)render()}
+  catch(e){console.warn('스냅샷 목록 조회 실패:',e)}
+}
+
+// ── 평가액 계산 (lines: {g:그룹, t:티커, n:이름, q:수량, p:단가, c:통화, e:1이면 추정값}) ──
+function snapRate(s){return s.rate||state.settings.exchangeRate}
+function lineKRW(s,l){return(l.q||0)*(l.p||0)*(l.c==='USD'?snapRate(s):1)}
+function sv(s,g){if(!s)return null;const ls=(s.lines||[]).filter(l=>g==='*'||l.g===g);if(g!=='*'&&!ls.length&&!(g in(s.flows||{})))return null;return ls.reduce((t,l)=>t+lineKRW(s,l),0)}
+function sfl(s,g){if(!s)return null;const f=s.flows||{};return g==='*'?Object.values(f).reduce((t,x)=>t+(x||0),0):(f[g]||0)}
+function snapCols(y){const c=[{key:snapKey(y-1,12),label:`'${String(y-1).slice(2)}.12`,base:true}];for(let m=1;m<=12;m++)c.push({key:snapKey(y,m),label:m+'월'});c.forEach(x=>x.snap=state.snapshots[x.key]||null);return c}
+// 기준(baseIdx): 전년 12월 기록이 있으면 그것, 없으면 올해 첫 기록
+function snapBase(cols,get){if(get(cols[0].snap)!=null)return 0;return cols.findIndex((c,i)=>i>0&&c.snap&&get(c.snap)!=null)}
+function snapRows(cols,g){
+  const bi=snapBase(cols,s=>sv(s,g));let cum=0;
+  return cols.map((c,i)=>{
+    const v=sv(c.snap,g),pv=i>0?sv(cols[i-1].snap,g):null;
+    const delta=(v!=null&&pv!=null)?v-pv:null;
+    const after=bi>=0&&i>bi&&!!c.snap;
+    const flow=c.snap&&!c.base?sfl(c.snap,g):null;
+    if(after)cum+=sfl(c.snap,g);
+    let ytd=null;
+    if(after&&v!=null){const b=sv(cols[bi].snap,g),den=b+cum;if(den>0)ytd=(v-b-cum)/den*100}
+    const tot=sv(c.snap,'*');
+    return{v,delta,flow,cum:after?cum:null,ytd,w:(v!=null&&tot>0)?v/tot*100:null};
+  });
+}
+function snapMarket(cols){
+  const bi=snapBase(cols,s=>s&&s.spx!=null?s.spx:null);
+  return cols.map((c,i)=>{
+    const s=c.snap,p=i>0?cols[i-1].snap:null;
+    const rate=s?s.rate:null,spx=s&&s.spx!=null?s.spx:null;
+    const rateChg=(rate&&p&&p.rate)?(rate/p.rate-1)*100:null;
+    const spxMon=(spx&&p&&p.spx)?(spx/p.spx-1)*100:null;
+    const spxYtd=(bi>=0&&i>bi&&spx)?(spx/cols[bi].snap.spx-1)*100:null;
+    return{rate,rateChg,spx,spxMon,spxYtd};
+  });
+}
+
+// ── 스냅샷 구성: 기준일 + 수량 기준 → 종목 라인/환율/S&P500 ──
+// basis 'current'=지금 보유 종목·수량, 'prev'=직전 기록의 종목·수량 (과거 날짜용)
+// 가격 우선순위: 서버가 그날 저장한 스냅샷 > (오늘이면) 실시간 시세 > 서버 과거 종가(/price_on) > 직전 기록/현재가(⚠추정)
+function snapPrevKey(key){return Object.keys(state.snapshots).filter(k=>k<key).sort().pop()}
+function snapLastPrice(t,key){
+  const ks=Object.keys(state.snapshots).filter(k=>k<key).sort().reverse();
+  for(const k of ks){const l=(state.snapshots[k].lines||[]).find(x=>x.t===t&&x.p);if(l)return l.p}
+  return null;
+}
+async function snapCompose(date,basis){
+  const key=date.slice(0,7),today=fmtD(new Date()),notes=[];
+  let base=[];
+  if(basis==='prev'){
+    const pk=snapPrevKey(key);
+    if(pk)state.snapshots[pk].lines.forEach(l=>base.push({g:l.g,t:l.t,n:l.n,q:l.q,c:l.c,prevP:l.p}));
+    else{basis='current';notes.push('직전 기록이 없어서 현재 보유 종목으로 채웠어')}
+  }
+  if(basis==='current'){
+    const m={};
+    state.accounts.forEach(a=>(a.holdings||[]).forEach(h=>{
+      const g=snapGroupOf(a),k=g+'\u0000'+h.ticker;
+      if(!m[k])m[k]={g,t:h.ticker,n:h.name||h.ticker,q:0,c:h.currency,manual:h.manualPrice||0};
+      m[k].q+=h.quantity;
+    }));
+    base=Object.values(m);
+  }
+  const srv=serverSnaps[key]&&serverSnaps[key].date===date?serverSnaps[key]:null;
+  const lines=base.map(b=>({g:b.g,t:b.t,n:b.n,q:b.q,c:b.c,p:null,e:0}));
+  const unresolved=[];
+  lines.forEach((l,i)=>{
+    const b=base[i];let p=null;
+    if(!l.t){p=b.prevP||0;l.e=1;l.p=p;return}
+    if(srv&&srv.prices&&srv.prices[l.t]&&srv.prices[l.t].price)p=srv.prices[l.t].price;
+    else if(date===today){if(b.manual)p=b.manual;else{const sp=serverPrices[l.t];if(sp&&sp.price)p=sp.price}}
+    l.p=p;if(p==null)unresolved.push(l.t);
+  });
+  let rate=(srv&&srv.rate)||(date===today?state.settings.exchangeRate:null),spx=srv&&srv.spx||null,po=null;
+  if(unresolved.length||!rate||!spx){
+    try{
+      const r=await fetch(`${API_BASE}/price_on?date=${date}&tickers=${encodeURIComponent([...new Set(unresolved)].join(','))}`,{signal:AbortSignal.timeout(40000)});
+      po=await r.json();if(po.error){notes.push('서버 응답 오류: '+po.error);po=null}
+    }catch{notes.push('서버에서 과거 가격을 못 가져왔어. 값을 직접 입력해줘')}
+  }
+  lines.forEach((l,i)=>{
+    if(l.p!=null)return;
+    const x=po&&po.prices&&po.prices[l.t];
+    if(x){l.p=x.price;return}
+    const h=allH().find(y=>y.ticker===l.t);
+    l.p=base[i].prevP||snapLastPrice(l.t,key)||(h?getP(h).price:0);l.e=1;
+  });
+  if(!rate&&po&&po.rate)rate=po.rate;
+  if(!spx&&po&&po.spx)spx=po.spx;
+  if(!rate){rate=state.settings.exchangeRate;notes.push('그날 환율을 못 구해서 현재 환율을 넣었어. 확인해줘')}
+  const est=lines.filter(l=>l.e&&l.t).map(l=>l.n||l.t);
+  if(est.length)notes.push('⚠ 그날 가격을 못 구한 종목(직전 기록/현재가로 대체): '+est.join(', '));
+  if(lines.some(l=>!l.t))notes.push('⚠ 직접입력 줄은 직전 금액 그대로야. 확인해줘');
+  return{lines,rate:Math.round(rate*100)/100,spx:spx?Math.round(spx*100)/100:null,notes};
+}
+
+// ── 렌더: 결산 탭 ──
+const fN=n=>n==null?'-':Math.round(n).toLocaleString('ko-KR');
+const fP=n=>n==null?'-':n.toFixed(2)+'%';
+const sgn=n=>n==null||n===0?'':(n>0?'color:var(--gain)':'color:var(--loss)');
+
+function svgSettleChart(cols,tot,mk){
+  const w=700,h=280,pl=26,pr=26,pt=34,pb=36;
+  const xs=cols.map((_,i)=>pl+(w-pl-pr)*i/(cols.length-1));
+  const vals=tot.map(r=>r.v);const vv=vals.filter(v=>v!=null);
+  if(vv.length<2)return'';
+  const lo=Math.min(...vv)*0.97,hi=Math.max(...vv)*1.03;
+  const yv=v=>pt+(h-pt-pb)*(1-(v-lo)/((hi-lo)||1));
+  const pc=[...tot.map(r=>r.ytd),...mk.map(r=>r.spxYtd)].filter(v=>v!=null);
+  const plo=Math.min(0,...pc),phi=Math.max(0,...pc);
+  const yp=p=>pt+(h-pt-pb)*(1-(p-plo)/((phi-plo)||1));
+  const path=(arr,f)=>{let d='',pen=false;arr.forEach((v,i)=>{if(v==null){pen=false;return}d+=(pen?'L':'M')+xs[i].toFixed(1)+' '+f(v).toFixed(1)+' ';pen=true});return d};
+  let s=`<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">`;
+  s+=`<line x1="${pl}" x2="${w-pr}" y1="${yp(0)}" y2="${yp(0)}" stroke="var(--border)" stroke-dasharray="3 3"/>`;
+  s+=`<path d="${path(vals,yv)}" fill="none" stroke="var(--accent)" stroke-width="3"/>`;
+  s+=`<path d="${path(tot.map(r=>r.ytd),yp)}" fill="none" stroke="#ff6b8a" stroke-width="2.8"/>`;
+  s+=`<path d="${path(mk.map(r=>r.spxYtd),yp)}" fill="none" stroke="var(--text-muted)" stroke-width="1.8" stroke-dasharray="4 3"/>`;
+  vals.forEach((v,i)=>{if(v==null)return;s+=`<circle cx="${xs[i]}" cy="${yv(v)}" r="4.5" fill="var(--accent)"/>`;if(i%2===0||i===vals.length-1)s+=`<text x="${xs[i]}" y="${yv(v)-11}" text-anchor="middle" font-size="19" fill="var(--text-muted)" font-family="'JetBrains Mono',monospace">${fmtS(v)}</text>`});
+  tot.forEach((r,i)=>{if(r.ytd!=null)s+=`<circle cx="${xs[i]}" cy="${yp(r.ytd)}" r="4" fill="#ff6b8a"/>`});
+  cols.forEach((c,i)=>{s+=`<text x="${xs[i]}" y="${h-10}" text-anchor="middle" font-size="19" fill="var(--text-muted)" font-family="'Noto Sans KR',sans-serif">${c.base?'기초':c.label}</text>`});
+  return s+'</svg>';
+}
+
+function snapPending(){
+  if(!state.accounts.length)return null;
+  const now=fmtD(new Date());const [py,pm]=snapPrevMonth();const n=new Date();
+  const cand=[[n.getFullYear(),n.getMonth()+1],[py,pm]];
+  for(const [y,m] of cand){const t=snapTarget(y,m),k=snapKey(y,m);if(now>=t&&!state.snapshots[k])return{key:k,date:t}}
+  return null;
+}
+
+function rSettle(){
+  const years=[...new Set([new Date().getFullYear(),snapYear,...Object.keys(state.snapshots).map(k=>+k.slice(0,4))])].sort();
+  const cols=snapCols(snapYear);
+  let html=`<div style="padding:14px 18px 0;display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="openSnapNew()">📸 스냅샷 기록</button><button class="btn btn-secondary btn-sm" onclick="openSnapGroups()">⚙ 그룹 설정</button></div>`;
+  const pend=snapPending();
+  if(pend)html+=`<div class="card fade-in" style="padding:12px 14px;display:flex;align-items:center;gap:10px;justify-content:space-between;border-color:rgba(255,190,61,0.4)"><div style="font-size:0.78rem;line-height:1.5">📌 <b>${pend.date}</b> 결산 기록이 아직 없어${serverSnaps[pend.key]&&serverSnaps[pend.key].date===pend.date?'<br><span style="color:var(--text-muted)">서버가 그날 가격을 저장해뒀어</span>':''}</div><button class="btn btn-warn btn-sm" onclick="openSnapNew('${pend.date}')">기록하기</button></div>`;
+  html+=`<div class="year-tabs" style="padding:12px 18px 0">${years.map(y=>`<button class="year-tab ${y===snapYear?'active':''}" onclick="snapYear=${y};snapScrollX=null;render()">${y}</button>`).join('')}</div>`;
+  const names=snapGroupNames();
+  if(!Object.keys(state.snapshots).length){
+    return html+`<div class="empty fade-in"><div class="icon">📒</div><p>아직 결산 기록이 없어.<br>'📸 스냅샷 기록'을 누르면 기준일의 종목별 수량과 가격이 그대로 저장돼.<br>매월 말일(주말이면 마지막 금요일)에 한 번씩 눌러줘.<br>지난 달 기록도 날짜를 바꿔서 찍을 수 있어.</p></div>`;
+  }
+  const tot=snapRows(cols,'*'),mk=snapMarket(cols);
+  const last=tot.map((r,i)=>r.v!=null?i:-1).reduce((a,b)=>Math.max(a,b),-1);
+  if(last>=0){
+    const r=tot[last],c=cols[last];
+    html+=`<div class="total-card fade-in"><div class="total-label">${c.base?c.label:snapYear+'년 '+c.label} 기말평가액</div><div class="total-value">${fmt(r.v)}</div>
+      <div class="total-pnl" style="${sgn(r.delta)}">전월 대비 ${r.delta==null?'-':(r.delta>=0?'+':'')+fmt(r.delta)}</div>
+      <div class="total-meta"><span>수익률(YTD) <b style="${sgn(r.ytd)}">${fP(r.ytd)}</b></span><span>S&amp;P500(YTD) <b>${fP(mk[last].spxYtd)}</b></span><span>누적 입출금 <b>${fN(r.cum)}</b></span></div></div>`;
+  }
+  const chart=svgSettleChart(cols,tot,mk);
+  if(chart)html+=`<div class="card fade-in fade-in-d1"><div class="card-title">📈 ${snapYear}년 추이 <span style="font-weight:400;text-transform:none;letter-spacing:0"><span style="color:var(--accent)">━</span> 평가액 <span style="color:#ff6b8a">━</span> 수익률(YTD) <span style="color:var(--text-muted)">┅</span> S&amp;P500</span></div>${chart}</div>`;
+  const th=cols.map((c,i)=>{const tag=c.snap?'':'<div style="font-size:0.55rem;font-weight:400;color:var(--text-muted)">+기록</div>';return`<th ${i===last?'data-last="1"':''} style="cursor:pointer" onclick="openSnapEdit('${c.key}')">${c.label}${tag}</th>`}).join('');
+  let t=`<table class="snap-tbl"><thead><tr><th class="lab">구분</th>${th}</tr></thead><tbody>`;
+  const row=(lab,cells,cls='')=>`<tr class="${cls}"><td class="lab">${lab}</td>${cells.map(x=>`<td style="${x[1]||''}">${x[0]}</td>`).join('')}</tr>`;
+  t+=row('환율(월말)',mk.map(m=>[m.rate?m.rate.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2}):'-']));
+  t+=row('　변동률',mk.map(m=>[fP(m.rateChg),sgn(m.rateChg)]));
+  t+=row('S&amp;P500(월말)',mk.map(m=>[m.spx?m.spx.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'-']));
+  t+=row('　월간 변동률',mk.map(m=>[fP(m.spxMon),sgn(m.spxMon)]));
+  t+=row('　연간 수익률',mk.map(m=>[fP(m.spxYtd),sgn(m.spxYtd)]));
+  const block=(title,rows,withW)=>{
+    let b=`<tr class="snap-sec"><td class="lab">${title}</td>${cols.map(()=>'<td></td>').join('')}</tr>`;
+    b+=row('기말평가액',rows.map(r=>[fN(r.v)]),'snap-main');
+    b+=row('증감(당월-전월)',rows.map(r=>[r.delta==null?'-':(r.delta>=0?'+':'')+fN(r.delta),sgn(r.delta)]));
+    b+=row('월차자금(입-출)',rows.map(r=>[r.flow==null?'-':fN(r.flow),sgn(r.flow)]));
+    b+=row('월차자금(누적)',rows.map(r=>[fN(r.cum)]));
+    b+=row('수익률(YTD)',rows.map(r=>[fP(r.ytd),sgn(r.ytd)+';font-weight:700']));
+    if(withW)b+=row('투자비중(%)',rows.map(r=>[r.w==null?'-':r.w.toFixed(2)+'%']));
+    return b;
+  };
+  t+=block('📊 종합',tot,false);
+  names.forEach(g=>{t+=block(esc(g),snapRows(cols,g),true)});
+  t+='</tbody></table>';
+  html+=`<div class="card fade-in fade-in-d2" style="padding:8px 0 8px 8px"><div class="snap-wrap">${t}</div></div>`;
+  html+=`<div style="padding:10px 22px 0;font-size:0.7rem;color:var(--text-muted);line-height:1.6">• 월 헤더를 누르면 그 달 기록(종목별 수량·가격·입출금)을 수정할 수 있어.<br>• 기록은 이 기기(브라우저)에만 저장돼. 설정의 백업 파일에 같이 들어가.<br>• 수익률(YTD) = (기말평가액 − 기초 − 누적입출금) ÷ (기초 + 누적입출금)</div>`;
+  return html;
+}
+
+// ── 스냅샷 입력 모달 ──
+function snapCloneEdit(key){
+  const s=state.snapshots[key];
+  return{key,date:s.date||snapTarget(+key.slice(0,4),+key.slice(5)),isNew:false,basis:'prev',loading:false,notes:[],rate:s.rate,spx:s.spx,lines:JSON.parse(JSON.stringify(s.lines||[])),flows:{...(s.flows||{})}};
+}
+function snapDefaultBasis(date){
+  const days=(new Date(fmtD(new Date()))-new Date(date))/86400000;
+  return days<=7?'current':(snapPrevKey(date.slice(0,7))?'prev':'current');
+}
+function openSnapEdit(key){
+  if(state.snapshots[key]){snapDraft=snapCloneEdit(key);openMod='snap';modalOpen=true;render()}
+  else openSnapNew(snapTarget(+key.slice(0,4),+key.slice(5)));
+}
+async function openSnapNew(date){
+  date=date||fmtD(new Date());
+  const key=date.slice(0,7);
+  if(state.snapshots[key]){snapDraft=snapCloneEdit(key);openMod='snap';modalOpen=true;render();showToast('이미 기록이 있는 달이야. 불러왔어');return}
+  snapDraft={key,date,isNew:true,basis:snapDefaultBasis(date),loading:true,notes:[],rate:null,spx:null,lines:[],flows:{}};
+  openMod='snap';modalOpen=true;render();
+  await snapReload();
+}
+async function snapReload(){
+  const tk=++snapToken,d=snapDraft;
+  d.loading=true;render();
+  const r=await snapCompose(d.date,d.basis);
+  if(tk!==snapToken||snapDraft!==d)return;
+  Object.assign(d,{lines:r.lines,rate:r.rate,spx:r.spx,notes:r.notes,loading:false});
+  if(openMod==='snap')render();
+}
+function snapSetDate(v){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)||v>fmtD(new Date()))return;
+  const key=v.slice(0,7);
+  if(state.snapshots[key]){snapDraft=snapCloneEdit(key);render();showToast('이미 기록이 있는 달이야. 불러왔어');return}
+  Object.assign(snapDraft,{date:v,key,basis:snapDefaultBasis(v)});
+  snapReload();
+}
+function snapSetBasis(v){snapDraft.basis=v;if(snapDraft.isNew)snapReload()}
+function snapRefetch(){
+  if(!snapDraft.isNew&&!confirm('입력한 수량/가격이 기준일 기준으로 다시 채워져. 계속할까?'))return;
+  snapReload();
+}
+function snapRecalc(){
+  const d=snapDraft;if(!d)return;const s={rate:d.rate,lines:d.lines};let tot=0;
+  d.lines.forEach((l,i)=>{const el=document.getElementById('snap-lv-'+i);if(el)el.textContent=fN(lineKRW(s,l))});
+  snapGroupNames(d).forEach((g,gi)=>{const v=d.lines.filter(l=>l.g===g).reduce((t,l)=>t+lineKRW(s,l),0);tot+=v;const el=document.getElementById('snap-gt-'+gi);if(el)el.textContent=fN(v)});
+  const te=document.getElementById('snap-tot');if(te)te.textContent=fN(tot);
+}
+function snapField(f,v){snapDraft[f]=f==='date'?v:snapNum(v);snapRecalc()}
+function snapLine(i,f,v){const l=snapDraft.lines[i];if(f==='n'){l.n=v}else{l[f]=snapNum(v);if(f==='p')l.e=0}snapRecalc()}
+function snapFlow(g,v){snapDraft.flows[g]=snapNum(v)}
+function snapDelLine(i){snapDraft.lines.splice(i,1);snapKeepScroll=true;render()}
+function snapAddLine(gi){const g=snapGroupNames(snapDraft)[gi];snapDraft.lines.push({g,t:'',n:'직접입력',q:1,p:0,c:'KRW',e:0});snapKeepScroll=true;render()}
+function snapQuick(which){
+  if(which==='today')return snapSetDate(fmtD(new Date()));
+  const [y,m]=snapPrevMonth();snapSetDate(snapTarget(y,m));
+}
+
+function mSnap(){
+  const d=snapDraft;
+  const head=`<div class="modal-header"><h3>${d.isNew?'📸 스냅샷 기록':'월 기록 수정'}</h3><button class="modal-close" onclick="closeMod()">×</button></div>`;
+  const today=fmtD(new Date());
+  let h=head;
+  if(d.isNew){
+    h+=`<div class="field"><label>기준일 (이 날짜가 속한 달의 결산으로 저장돼)</label><input type="date" max="${today}" value="${d.date}" onchange="snapSetDate(this.value)"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"><button class="btn btn-secondary btn-sm" onclick="snapQuick('today')">오늘</button><button class="btn btn-secondary btn-sm" onclick="snapQuick('prev')">지난달 결산일</button></div>`;
+  }else h+=`<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:12px">기준일 <b style="font-family:var(--mono)">${d.date}</b></div>`;
+  h+=`<div class="field"><label>수량 기준</label><div style="display:flex;gap:6px"><select style="flex:1" onchange="snapSetBasis(this.value)"><option value="current" ${d.basis==='current'?'selected':''}>지금 보유 종목·수량</option><option value="prev" ${d.basis==='prev'?'selected':''}>직전 기록의 종목·수량</option></select><button class="btn btn-secondary btn-sm" onclick="snapRefetch()">↻ 다시 가져오기</button></div></div>`;
+  if(d.loading)return h+`<div style="padding:30px 0;text-align:center;color:var(--text-muted);font-size:0.85rem">⏳ 기준일 가격 불러오는 중...</div>`;
+  if(d.notes&&d.notes.length)h+=`<div style="font-size:0.72rem;color:var(--dividend);margin-bottom:12px;line-height:1.6">${d.notes.map(esc).join('<br>')}</div>`;
+  h+=`<div class="row"><div class="field"><label>환율(USD/KRW)</label><input type="number" step="0.01" inputmode="decimal" value="${d.rate||''}" oninput="snapField('rate',this.value)"></div><div class="field"><label>S&amp;P500</label><input type="number" step="0.01" inputmode="decimal" value="${d.spx||''}" oninput="snapField('spx',this.value)"></div></div>`;
+  const names=snapGroupNames(d);
+  names.forEach((g,gi)=>{
+    h+=`<div style="border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:0.85rem">${esc(g)}</b><span id="snap-gt-${gi}" style="font-family:var(--mono);font-size:0.8rem;color:var(--accent-text)"></span></div>`;
+    d.lines.forEach((l,i)=>{
+      if(l.g!==g)return;
+      const nm=l.t?`<span style="font-size:0.75rem;font-weight:600">${esc(l.n||l.t)}</span> <span style="font-size:0.65rem;color:var(--text-muted)">${esc(l.t)} · ${l.c}</span>`:`<input class="snl-in" style="flex:1" value="${esc(l.n)}" oninput="snapLine(${i},'n',this.value)" placeholder="이름">`;
+      h+=`<div class="snl"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:3px">${nm}<button class="modal-close" style="width:24px;height:24px;font-size:0.9rem" onclick="snapDelLine(${i})">×</button></div>
+        <div style="display:flex;gap:6px;align-items:center"><input class="snl-in" type="number" step="any" inputmode="decimal" value="${l.q}" oninput="snapLine(${i},'q',this.value)" title="수량"><span style="font-size:0.7rem;color:var(--text-muted)">×</span><input class="snl-in ${l.e?'snl-est':''}" type="number" step="any" inputmode="decimal" value="${l.p}" oninput="snapLine(${i},'p',this.value);this.classList.remove('snl-est')" title="단가"><span id="snap-lv-${i}" style="font-family:var(--mono);font-size:0.7rem;min-width:84px;text-align:right;color:var(--text-secondary)"></span></div></div>`;
+    });
+    h+=`<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="snapAddLine(${gi})">+ 직접입력 줄</button><div style="flex:1"></div><span style="font-size:0.7rem;color:var(--text-muted)">입(+)·출(−)금</span><input class="snl-in" style="width:104px" type="number" step="any" inputmode="decimal" value="${d.flows[g]||''}" placeholder="0" oninput="snapFlow('${esc(g).replace(/'/g,"\\'")}',this.value)"></div></div>`;
+  });
+  if(!names.length)h+=`<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px">계좌를 먼저 추가해줘.</div>`;
+  h+=`<div style="display:flex;justify-content:space-between;font-size:0.8rem;margin:4px 2px 12px"><span style="color:var(--text-muted)">합계</span><b id="snap-tot" style="font-family:var(--mono)"></b></div>
+    <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:12px;line-height:1.5">매수·매도로 수량이 달라졌다면 수량을 고쳐줘. 전량 매도한 종목은 '+ 직접입력 줄'로 그날 금액만 넣어도 돼. 직접입력 줄은 수량 1 × 금액으로 계산돼.</div>
+    <div style="display:flex;gap:8px"><button class="btn btn-primary" style="flex:1" onclick="saveSnap()">저장</button>${d.isNew?'':`<button class="btn btn-danger" onclick="delSnap()">삭제</button>`}</div>`;
+  return h;
+}
+function saveSnap(){
+  const d=snapDraft;
+  const lines=d.lines.filter(l=>l.q||l.p).map(l=>({g:l.g,t:l.t,n:l.n,q:l.q,p:l.p,c:l.c,e:l.e?1:0}));
+  if(lines.some(l=>l.c==='USD')&&!d.rate){alert('환율을 입력해줘');return}
+  const flows={};Object.entries(d.flows).forEach(([g,v])=>{if(v)flows[g]=v});
+  state.snapshots[d.key]={month:d.key,date:d.date,rate:d.rate||null,spx:d.spx||null,lines,flows};
+  saveSt();closeMod();snapYear=+d.key.slice(0,4);render();showToast('✅ 스냅샷 저장했어');
+}
+function delSnap(){
+  if(!confirm(snapDraft.key+' 기록을 삭제할까?'))return;
+  delete state.snapshots[snapDraft.key];saveSt();closeMod();
+}
+
+// 그룹 설정: 계좌 → 결산 그룹 매핑 / 과거 기록 그룹명 일괄 변경
+function openSnapGroups(){openMod='snapGroups';modalOpen=true;render()}
+function mSnapGroups(){
+  const known=snapGroupNames();
+  const accRows=state.accounts.map((a,i)=>`<div class="field"><label>${esc(a.name)}</label><input id="f-sg-${i}" list="snap-dl" value="${esc(snapGroupOf(a))}"></div>`).join('');
+  const hist=[...new Set(Object.values(state.snapshots).flatMap(s=>[...(s.lines||[]).map(l=>l.g),...Object.keys(s.flows||{})]))];
+  const histRows=hist.map((g,j)=>`<div class="field"><label>${esc(g)}</label><input id="f-sr-${j}" data-old="${esc(g)}" value="${esc(g)}"></div>`).join('');
+  return`<div class="modal-header"><h3>결산 그룹 설정</h3><button class="modal-close" onclick="closeMod()">×</button></div>
+    <datalist id="snap-dl">${known.map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5">같은 그룹 이름을 쓰는 계좌는 결산표에서 한 줄로 합쳐져 (예: '배당국내' ← 미래/ISA, 키움, 삼전). 이름을 비워두면 계좌명 그대로 써.</div>
+    ${accRows||'<div style="font-size:0.8rem;color:var(--text-muted)">계좌가 없어.</div>'}
+    ${hist.length?`<div class="card-title" style="margin:16px 0 8px">과거 기록 그룹명 (바꾸면 모든 월에 일괄 적용, 같은 이름이면 합산)</div>${histRows}`:''}
+    <button class="btn btn-primary" style="width:100%;margin-top:6px" onclick="saveSnapGroups()">저장</button>`;
+}
+function saveSnapGroups(){
+  state.settings.snapGroups=state.settings.snapGroups||{};
+  state.accounts.forEach((a,i)=>{const v=(document.getElementById('f-sg-'+i).value||'').trim();if(v&&v!==a.name)state.settings.snapGroups[a.id]=v;else delete state.settings.snapGroups[a.id]});
+  document.querySelectorAll('[id^="f-sr-"]').forEach(el=>{
+    const o=el.dataset.old,n=el.value.trim();if(!n||n===o)return;
+    Object.values(state.snapshots).forEach(s=>{
+      (s.lines||[]).forEach(l=>{if(l.g===o)l.g=n});
+      if(s.flows&&o in s.flows){s.flows[n]=(s.flows[n]||0)+s.flows[o];delete s.flows[o]}
+    });
+  });
+  saveSt();closeMod();showToast('✅ 그룹 설정 저장');
+}
+
+// ═══════════════════════════════════════════
 // RENDER
 // ═══════════════════════════════════════════
-function render(){document.getElementById('app').innerHTML=rHeader()+rTabs()+rContent()+rModal();bindEv();if(currentTab==='dividends'){initDivMining()}else if(miningInterval){clearInterval(miningInterval);miningInterval=null}}
+function render(){const _sw=document.querySelector('.snap-wrap');if(_sw)snapScrollX=_sw.scrollLeft;const _mb=document.querySelector('.modal-box');const _mt=(snapKeepScroll&&_mb)?_mb.scrollTop:0;document.getElementById('app').innerHTML=rHeader()+rTabs()+rContent()+rModal();bindEv();if(snapKeepScroll){const nb=document.querySelector('.modal-box');if(nb)nb.scrollTop=_mt;snapKeepScroll=false}if(openMod==='snap')snapRecalc();if(currentTab==='dividends'){initDivMining()}else if(miningInterval){clearInterval(miningInterval);miningInterval=null}
+  if(currentTab==='settle'){const w=document.querySelector('.snap-wrap');if(w){if(snapScrollX!=null)w.scrollLeft=snapScrollX;else{const t=w.querySelector('[data-last]');if(t)w.scrollLeft=t.offsetLeft+t.offsetWidth-w.clientWidth+16}}}}
 
 function rHeader(){
   const ri=loading?'<span class="spinning">↻</span>':'↻';
@@ -617,8 +962,8 @@ function rHeader(){
     <button class="btn btn-secondary btn-icon" onclick="openSettings()">⚙</button>
     <button class="btn btn-primary btn-sm" onclick="openAddH()">+ 종목</button></div></div>`}
 
-function rTabs(){const tabs=[{id:'dashboard',i:'📊',l:'대시보드'},{id:'holdings',i:'💼',l:'자산'},{id:'dividends',i:'💰',l:'배당'}];return`<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${currentTab===t.id?'active':''}" onclick="currentTab='${t.id}';render()">${t.i} ${t.l}</button>`).join('')}</div>`}
-function rContent(){if(currentTab==='dashboard')return rDash();if(currentTab==='holdings')return rHold();if(currentTab==='dividends')return rDiv();return''}
+function rTabs(){const tabs=[{id:'dashboard',i:'📊',l:'대시보드'},{id:'holdings',i:'💼',l:'자산'},{id:'dividends',i:'💰',l:'배당'},{id:'settle',i:'📒',l:'투자 결산'}];return`<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${currentTab===t.id?'active':''}" onclick="currentTab='${t.id}';render()">${t.i} ${t.l}</button>`).join('')}</div>`}
+function rContent(){if(currentTab==='dashboard')return rDash();if(currentTab==='holdings')return rHold();if(currentTab==='dividends')return rDiv();if(currentTab==='settle')return rSettle();return''}
 
 function rDash(){
   const{tv,tc,pnl,pp}=totals();const ad=annualDiv(true);const adGross=annualDiv(false);const dy=tv>0?(adGross/tv*100):0;const md=monthDiv(true);const sd=secData();const dly=divLogYear();const pc=pnl>=0?'var(--gain)':'var(--loss)';
@@ -803,7 +1148,7 @@ function onBarClick(idx){
 // MODALS
 // ═══════════════════════════════════════════
 function rModal(){if(!openMod)return'<div class="modal-overlay"></div>';let c='';
-  if(openMod==='account')c=mAcc();else if(openMod==='holding')c=mHold();else if(openMod==='divLog')c=mDivLog();else if(openMod==='settings')c=mSettings();
+  if(openMod==='account')c=mAcc();else if(openMod==='holding')c=mHold();else if(openMod==='divLog')c=mDivLog();else if(openMod==='settings')c=mSettings();else if(openMod==='snap')c=mSnap();else if(openMod==='snapGroups')c=mSnapGroups();
   return`<div class="modal-overlay open" onclick="closeMod()"><div class="modal-box" onclick="event.stopPropagation()">${c}</div></div>`}
 
 // 5. 계좌 추가/수정 + 7. TAX 설정
@@ -1006,7 +1351,7 @@ function preserveAndRender(){
 // ═══════════════════════════════════════════
 // ACTIONS
 // ═══════════════════════════════════════════
-function closeMod(){openMod=null;editH=null;editAcc=null;modalOpen=false;customDivMonths=[];render()}
+function closeMod(){snapDraft=null;snapToken++;openMod=null;editH=null;editAcc=null;modalOpen=false;customDivMonths=[];render()}
 function openAddH(){if(!state.accounts.length){openMod='account';editAcc=null;modalOpen=true;render();return}editH=null;openMod='holding';modalOpen=true;render()}
 function openSettings(){openMod='settings';modalOpen=true;render()}
 function editHolding(aId,hId){const a=state.accounts.find(x=>x.id===aId);if(!a)return;const h=a.holdings.find(x=>x.id===hId);if(!h)return;editH={...h,accountId:aId};customDivMonths=h.customDivMonths?[...h.customDivMonths]:[];openMod='holding';modalOpen=true;render()}
@@ -1089,7 +1434,7 @@ function delDivLog(id){state.dividendLogs=state.dividendLogs.filter(l=>l.id!==id
 function saveSettings(){state.settings.exchangeRate=parseFloat(document.getElementById('f-rate').value)||1450;saveSt();closeMod()}
 function resetAll(){if(!confirm('모든 데이터를 초기화할까요?'))return;state=defState();saveSt();closeMod()}
 function exportJ(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`portfolio_${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url)}
-function importJ(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=function(ev){try{const d=JSON.parse(ev.target.result);if(d.accounts){state=d;state.accounts.forEach(a=>{if(a.taxRate===undefined)a.taxRate=15});saveSt();closeMod();showToast('✅ 복원 완료!')}}catch{alert('유효하지 않은 JSON')}};r.readAsText(f)}
+function importJ(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=function(ev){try{const d=JSON.parse(ev.target.result);if(d.accounts){state=d;if(!state.snapshots)state.snapshots={};if(!state.settings)state.settings={exchangeRate:1450};state.accounts.forEach(a=>{if(a.taxRate===undefined)a.taxRate=15});saveSt();closeMod();showToast('✅ 복원 완료!')}}catch{alert('유효하지 않은 JSON')}};r.readAsText(f)}
 function bindEv(){document.querySelectorAll('.modal-box input').forEach(inp=>{inp.addEventListener('keydown',e=>{if(e.key==='Enter'){const btn=document.querySelector('.modal-box .btn-primary');if(btn)btn.click()}})})}
 
 // ═══════════════════════════════════════════
