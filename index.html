@@ -19,7 +19,10 @@ body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;bac
 #app{position:relative;z-index:1;max-width:680px;margin:0 auto;padding-bottom:100px}
 .header{position:sticky;top:0;z-index:100;padding:14px 18px;background:var(--header-bg);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .header h1{font-size:1.35rem;font-weight:800;letter-spacing:-0.5px;background:var(--h1-grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.header small{display:block;font-size:0.7rem;color:var(--text-muted);margin-top:1px;letter-spacing:0.5px}
+.header-title{display:flex;align-items:center;gap:8px;min-width:0}
+.header-title h1{white-space:nowrap}
+.header-actions .btn{white-space:nowrap;flex-shrink:0}
+@media(max-width:400px){.header{padding:12px 12px}.header h1{font-size:1.15rem}.header-title{gap:6px}.header-actions{gap:4px}.server-status{padding:2px 6px;font-size:0.6rem}}
 .header-actions{display:flex;gap:6px;align-items:center}
 .btn{border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:var(--sans);font-weight:600;font-size:0.82rem;padding:8px 14px;transition:all 0.2s;display:inline-flex;align-items:center;gap:5px}
 .btn-primary{background:var(--btn-grad);color:var(--btn-text)}.btn-primary:hover{box-shadow:0 0 20px rgba(var(--accent-rgb),0.3);transform:translateY(-1px)}
@@ -82,7 +85,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .div-summary .big{font-family:var(--mono);font-size:1.6rem;font-weight:800;color:var(--dividend)}.div-summary .sub{font-size:0.8rem;color:var(--text-secondary);margin-top:6px}
 @keyframes spin{to{transform:rotate(360deg)}}.spinning{animation:spin 1s linear infinite}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--bg-base);border:1px solid var(--border);border-radius:10px;padding:10px 18px;font-size:0.82rem;color:var(--text-primary);z-index:2000;backdrop-filter:blur(12px);opacity:0;transition:opacity 0.3s;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4)}.toast.show{opacity:1}
-.server-status{display:inline-flex;align-items:center;gap:4px;font-size:0.65rem;padding:2px 8px;border-radius:10px}
+.server-status{display:inline-flex;align-items:center;gap:4px;font-size:0.65rem;padding:2px 8px;border-radius:10px;white-space:nowrap}
 .server-online{background:rgba(74,222,128,0.1);color:var(--success)}.server-offline{background:rgba(248,113,113,0.1);color:var(--danger)}
 .collapsible-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;padding:4px 0}
 .collapsible-header:hover{opacity:0.8}
@@ -955,14 +958,14 @@ function render(){const _sw=document.querySelector('.snap-wrap');if(_sw)snapScro
 
 function rHeader(){
   const ri=loading?'<span class="spinning">↻</span>':'↻';
-  const lu=lastServerUpdate?lastServerUpdate.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'';
-  const st=serverOnline?`<span class="server-status server-online">● 서버 연결됨 ${lu}</span>`:`<span class="server-status server-offline">● 서버 오프라인</span>`;
-  return`<div class="header"><div><h1>Portfolio Pro</h1><small>${st}</small></div>
+  const lu=lastServerUpdate?lastServerUpdate.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
+  const st=serverOnline?`<span class="server-status server-online" title="서버 연결됨">● 연결됨 ${lu}</span>`:`<span class="server-status server-offline" title="서버 오프라인">● 오프라인</span>`;
+  return`<div class="header"><div class="header-title"><h1>Portfolio Pro</h1>${st}</div>
     <div class="header-actions"><button class="btn btn-secondary btn-icon" onclick="triggerServerRefresh()" title="서버 시세 갱신">${ri}</button>
     <button class="btn btn-secondary btn-icon" onclick="openSettings()">⚙</button>
     <button class="btn btn-primary btn-sm" onclick="openAddH()">+ 종목</button></div></div>`}
 
-function rTabs(){const tabs=[{id:'dashboard',i:'📊',l:'대시보드'},{id:'holdings',i:'💼',l:'자산'},{id:'dividends',i:'💰',l:'배당'},{id:'settle',i:'📒',l:'투자 결산'}];return`<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${currentTab===t.id?'active':''}" onclick="currentTab='${t.id}';render()">${t.i} ${t.l}</button>`).join('')}</div>`}
+function rTabs(){const tabs=[{id:'dashboard',i:'📊',l:'요약'},{id:'holdings',i:'💼',l:'자산'},{id:'dividends',i:'💰',l:'배당'},{id:'settle',i:'📒',l:'결산'}];return`<div class="tabs">${tabs.map(t=>`<button class="tab-btn ${currentTab===t.id?'active':''}" onclick="currentTab='${t.id}';render()">${t.i} ${t.l}</button>`).join('')}</div>`}
 function rContent(){if(currentTab==='dashboard')return rDash();if(currentTab==='holdings')return rHold();if(currentTab==='dividends')return rDiv();if(currentTab==='settle')return rSettle();return''}
 
 function rDash(){
